@@ -12,9 +12,10 @@ Iteratively verify the current branch for code issues, plan and implement fixes 
 
 ### Phase 1: Setup
 
-1. Determine the base branch from `$GIT_BASE_BRANCH` (fall back to `main`).
-2. Record the current HEAD: `git rev-parse HEAD`. Save this as `initial_head`.
-3. Create a working directory for plans: `mkdir -p .autofix/plans`
+!`mkdir -p .autofix/plans`
+
+- Base branch: !`echo "${GIT_BASE_BRANCH:-main}"`
+- Initial HEAD (`initial_head`): !`git rev-parse HEAD`
 
 ### Phase 2: Fix Loop
 
