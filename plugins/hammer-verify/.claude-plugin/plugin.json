@@ -1,0 +1,9 @@
+{
+  "name": "hammer-verify",
+  "version": "0.1.0",
+  "description": "Automated code verification and fixing",
+  "author": {
+    "name": "evgunter",
+    "url": "https://github.com/evgunter"
+  }
+}
