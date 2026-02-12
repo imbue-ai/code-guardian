@@ -40,9 +40,9 @@ After the loop ends:
 
 1. Collect all fix commits: `git log --reverse --format="%H %s" {initial_head}..HEAD`
 2. If there are no new commits, report that no issues were found and stop.
-3. For each commit, use `AskUserQuestion` to ask whether to keep it:
+3. Ask about ALL commits in a single `AskUserQuestion` call. Use one question per commit (up to 4 per call; if there are more than 4 commits, use multiple calls but still gather all answers before doing any git operations). Each question should:
    - Show the full commit message (which contains the problem and the fix).
    - Options: "Keep" and "Revert"
-4. For each commit the user wants to revert, run `git revert --no-edit {hash}`. Revert in reverse chronological order (newest first) to avoid conflicts.
+4. Only after ALL answers have been collected, revert the rejected commits. Run `git revert --no-edit {hash}` for each, in reverse chronological order (newest first) to avoid conflicts.
 5. Report the final summary: how many fixes kept, how many reverted.
 
