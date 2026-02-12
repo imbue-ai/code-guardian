@@ -12,10 +12,10 @@ Iteratively verify the current branch for code issues, plan and implement fixes 
 
 ### Phase 1: Setup
 
-!`mkdir -p .autofix/plans`
-
 - Base branch: !`printenv GIT_BASE_BRANCH || echo main`
 - Initial HEAD (`initial_head`): !`git rev-parse HEAD`
+
+Run `mkdir -p .autofix/plans` to ensure the plans directory exists.
 
 ### Phase 2: Fix Loop
 
