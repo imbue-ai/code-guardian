@@ -35,7 +35,7 @@ Check out the branch you want to verify, then run:
 The plugin will diff against `main` by default. To use a different base branch, set the `GIT_BASE_BRANCH` environment variable:
 
 ```bash
-GIT_BASE_BRANCH=develop claude
+export GIT_BASE_BRANCH=origin/main
 ```
 
 ## What it checks
@@ -48,7 +48,3 @@ The verifier scans for issues across these categories:
 - **Security** - hardcoded secrets, insecure patterns
 - **Completeness** - missing test coverage, incomplete integration, dependency issues
 - **Consistency** - commit message/implementation mismatch, documentation drift, instruction file violations, leftover artifacts from the change process
-
-## License
-
-MIT
