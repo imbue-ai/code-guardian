@@ -12,8 +12,9 @@ Iteratively verify the current branch for code issues, plan and implement fixes 
 
 ### Phase 1: Setup
 
-- Base branch: !`printenv GIT_BASE_BRANCH || echo main`
 - Initial HEAD (`initial_head`): !`git rev-parse HEAD`
+
+Determine the base branch: check the GIT_BASE_BRANCH environment variable. If it is set, use its value. Otherwise default to main.
 
 Create the .autofix/plans directory if it does not already exist.
 
