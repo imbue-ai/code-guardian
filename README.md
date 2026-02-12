@@ -31,6 +31,10 @@ Check out the branch you want to verify, then run:
 ```
 /hammer-verify:autofix
 ```
+or
+```
+/autofix
+```
 
 The plugin will diff against `main` by default. To use a different base branch, set the `GIT_BASE_BRANCH` environment variable:
 
