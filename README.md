@@ -13,14 +13,11 @@ A [Claude Code plugin](https://code.claude.com/docs/en/plugins) that automatical
 
 Requires [Claude Code](https://code.claude.com/docs/en/quickstart) v1.0.33 or later.
 
-Clone the repo and start Claude Code with the plugin loaded:
+Clone the repo and install the plugin:
 
 ```bash
 git clone https://github.com/imbue-ai/hammer-verify.git
-claude --plugin-dir ./hammer-verify/plugins/hammer-verify
 ```
-
-Or add it as a local marketplace so it persists across sessions:
 
 ```
 /plugin marketplace add ./hammer-verify
