@@ -14,7 +14,7 @@ Iteratively verify the current branch for code issues, plan and implement fixes 
 
 !`mkdir -p .autofix/plans`
 
-- Base branch: !`echo "${GIT_BASE_BRANCH:-main}"`
+- Base branch: !`printenv GIT_BASE_BRANCH || echo main`
 - Initial HEAD (`initial_head`): !`git rev-parse HEAD`
 
 ### Phase 2: Fix Loop
