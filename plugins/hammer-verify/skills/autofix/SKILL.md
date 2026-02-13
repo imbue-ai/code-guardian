@@ -40,9 +40,11 @@ After the loop ends:
 
 1. Collect all fix commits: `git log --reverse --format="%H %s" {initial_head}..HEAD`
 2. If there are no new commits, report that no issues were found and stop.
-3. Ask about ALL commits in a single `AskUserQuestion` call. Use one question per commit (up to 4 per call; if there are more than 4 commits, use multiple calls but still gather all answers before doing any git operations). Each question should:
+3. Check if `.autofix/config/auto-accept.md` exists. If it does, read it. This file contains free-text rules describing which kinds of fixes should be automatically accepted without prompting the user (e.g. "accept all naming fixes", "auto-accept anything in test files").
+4. For each commit, check its full commit message against the auto-accept rules. If a commit matches, keep it automatically — do not ask the user about it.
+5. Ask about the remaining commits in a single `AskUserQuestion` call. Use one question per commit (up to 4 per call; if there are more than 4 commits, use multiple calls but still gather all answers before doing any git operations). Each question should:
    - Show the full commit message (which contains the problem and the fix).
    - Options: "Keep" and "Revert"
-4. Only after ALL answers have been collected, revert the rejected commits. Run `git revert --no-edit {hash}` for each, in reverse chronological order (newest first) to avoid conflicts.
-5. Report the final summary: how many fixes kept, how many reverted.
+6. Only after ALL answers have been collected, revert the rejected commits. Run `git revert --no-edit {hash}` for each, in reverse chronological order (newest first) to avoid conflicts.
+7. Report the final summary: how many fixes kept (noting which were auto-accepted), how many reverted.
 
