@@ -16,9 +16,22 @@ Iteratively verify the current branch for code issues, plan and implement fixes 
 
 Determine the base branch: check the GIT_BASE_BRANCH environment variable. If it is set, use its value. Otherwise default to main.
 
-Create the .autofix/plans directory if it does not already exist.
+If you do not already know what the changes on this branch are supposed to accomplish, STOP and ask the user before continuing.
 
-### Phase 2: Fix Loop
+Write a brief description of what the branch is trying to do. This helps the diff validation and fix subagents distinguish intentional changes from issues.
+
+### Phase 2: Validate the Diff
+
+Read the diff validation prompt from [../validate-diff.md](../validate-diff.md). Spawn a Task subagent (`subagent_type: "general-purpose"`, `model: "haiku"`) with that prompt, providing the base branch name and the problem description.
+
+Based on the subagent's response:
+- If the diff is empty, STOP and tell the user there is nothing to fix.
+- If it reports significant unrelated changes, STOP and ask the user what the correct base branch is.
+- If it reports the work looks incomplete, note this but proceed -- autofix works on whatever is there.
+
+### Phase 3: Fix Loop
+
+Create the .autofix/plans directory if it does not already exist.
 
 Repeat up to 10 times:
 
@@ -34,7 +47,7 @@ Important:
 - Each iteration gets a fresh-context subagent, which is the whole point.
 - Do NOT pass the subagent any information about previous iterations or previous fixes. It operates from a clean slate every time.
 
-### Phase 3: Review
+### Phase 4: Review
 
 After the loop ends:
 
