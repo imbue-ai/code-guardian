@@ -25,7 +25,7 @@ Write a brief description of what the branch is trying to do. This helps the dif
 Read the diff validation prompt from [../validate-diff.md](../validate-diff.md). Spawn a Task subagent (`subagent_type: "general-purpose"`, `model: "haiku"`) with that prompt, providing the base branch name and the problem description.
 
 Based on the subagent's response:
-- If the diff is empty, STOP and tell the user there is nothing to fix.
+- If the diff is empty, STOP and ask the user whether the work has been committed yet or whether the base branch is wrong.
 - If it reports significant unrelated changes, STOP and ask the user what the correct base branch is.
 - If it reports the work looks incomplete, note this but proceed -- autofix works on whatever is there.
 
