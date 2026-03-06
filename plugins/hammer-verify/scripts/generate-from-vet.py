@@ -25,7 +25,7 @@ SKILL_PATHS = {
     "verify-and-fix": PLUGIN_ROOT / "skills" / "autofix" / "verify-and-fix.md",
 }
 PREAMBLE_PATHS = {
-    "verify-and-fix": PLUGIN_ROOT / "skills" / "autofix" / "verify-and-fix-preamble.md",
+    "verify-and-fix": SCRIPT_DIR / "verify-and-fix-preamble.md",
 }
 
 
