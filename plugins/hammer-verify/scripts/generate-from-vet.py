@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Generate verify skill markdown files from vet's identification guides.
 
