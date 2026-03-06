@@ -67,9 +67,4 @@ If tests fail, fix the failures and commit the fixes. Re-run the tests. Keep fix
 
 ---
 
-<!-- Issue categories below are generated from vet. To regenerate:
-     python scripts/generate-from-vet.py --vet-repo /path/to/vet
-     Then re-read ../verify-branch.md to confirm.
--->
-
 Read the issue categories from [verify-branch.md](../verify-branch.md). Use all categories listed there.
