@@ -22,6 +22,10 @@ PLUGIN_ROOT = SCRIPT_DIR.parent
 SKILL_PATHS = {
     "branch": PLUGIN_ROOT / "skills" / "verify-branch.md",
     "conversation": PLUGIN_ROOT / "skills" / "verify-conversation.md",
+    "verify-and-fix": PLUGIN_ROOT / "skills" / "autofix" / "verify-and-fix.md",
+}
+PREAMBLE_PATHS = {
+    "verify-and-fix": PLUGIN_ROOT / "skills" / "autofix" / "verify-and-fix-preamble.md",
 }
 
 
@@ -150,9 +154,17 @@ def generate_conversation_markdown(vet_modules) -> str:
     return "\n".join(sections)
 
 
+def generate_verify_and_fix_markdown(vet_modules) -> str:
+    """Generate verify-and-fix.md: preamble + branch issue categories."""
+    preamble = PREAMBLE_PATHS["verify-and-fix"].read_text()
+    branch_categories = generate_branch_markdown(vet_modules)
+    return preamble.rstrip() + "\n\n---\n\n" + branch_categories
+
+
 MODES = {
     "branch": generate_branch_markdown,
     "conversation": generate_conversation_markdown,
+    "verify-and-fix": generate_verify_and_fix_markdown,
 }
 
 
