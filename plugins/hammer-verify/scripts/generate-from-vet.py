@@ -20,7 +20,6 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLUGIN_ROOT = SCRIPT_DIR.parent
 SKILL_PATHS = {
-    "branch": PLUGIN_ROOT / "skills" / "verify-branch.md",
     "conversation": PLUGIN_ROOT / "skills" / "verify-conversation.md",
     "verify-and-fix": PLUGIN_ROOT / "skills" / "autofix" / "verify-and-fix.md",
 }
@@ -162,7 +161,6 @@ def generate_verify_and_fix_markdown(vet_modules) -> str:
 
 
 MODES = {
-    "branch": generate_branch_markdown,
     "conversation": generate_conversation_markdown,
     "verify-and-fix": generate_verify_and_fix_markdown,
 }
