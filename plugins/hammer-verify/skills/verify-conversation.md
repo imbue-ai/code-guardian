@@ -2,7 +2,7 @@
 
 Review the conversation for the following types of issues:
 
-### misleading_behavior
+## misleading_behavior
 
 The agent did something misleading in the conversation history.
 When writing your response, phrase it collaboratively rather than combatively.
@@ -22,7 +22,7 @@ Any self-identification made by the agent in the conversation history should be 
 
 ---
 
-### instruction_file_disobeyed
+## instruction_file_disobeyed
 
 Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST be obeyed.
 
@@ -38,7 +38,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### instruction_to_save
+## instruction_to_save
 
 The user gives guidance or feedback to the agent about general code style, their intent for the project, or anything else that is relevant beyond the scope of the current task.
 

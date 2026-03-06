@@ -71,7 +71,7 @@ If tests fail, fix the failures and commit the fixes. Re-run the tests. Keep fix
 
 Review the code for the following types of issues:
 
-### commit_message_mismatch
+## commit_message_mismatch
 
 - The diff must completely fulfill the user's request.
 - Look for incomplete implementations:
@@ -100,7 +100,7 @@ Review the code for the following types of issues:
 
 ---
 
-### documentation_implementation_mismatch
+## documentation_implementation_mismatch
 
 - The implementation should follow, in this priority order: 1. the user's request, 2. documentation existing in the code base, 3. existing code around it, 4. general best practices and common sense
 - If the user's request conflicts with the state of documentation in the code base, the documentation in the code base should be updated to reflect the new user request.
@@ -117,7 +117,7 @@ Review the code for the following types of issues:
 
 ---
 
-### incomplete_integration_with_existing_code
+## incomplete_integration_with_existing_code
 
 - The diff should follow existing architectural and organizational patterns in the codebase:
     - If the codebase uses a modular structure with separate files for classes/components, new classes should follow the same pattern
@@ -136,7 +136,7 @@ Review the code for the following types of issues:
 
 ---
 
-### user_request_artifacts_left_in_code
+## user_request_artifacts_left_in_code
 
 - Comments should describe what the code does, not how it was changed.
 - Flag comments that reference the change process: '# Changed from X to Y', '# Updated to print less'
@@ -148,7 +148,7 @@ Review the code for the following types of issues:
 
 ---
 
-### poor_naming
+## poor_naming
 
 - File, class, function, function parameter, and constant names should follow the format and naming standards that are currently dominant in the code base (especially within the same file or folder), or the style guide if one exists.
 - In the absence of existing code, common naming standards for the given programming language should be used.
@@ -162,7 +162,7 @@ Review the code for the following types of issues:
 
 ---
 
-### repetitive_or_duplicate_code
+## repetitive_or_duplicate_code
 
 Repetitive or duplicate code.
 
@@ -179,7 +179,7 @@ Repetitive or duplicate code.
 
 ---
 
-### refactoring_needed
+## refactoring_needed
 
 - Functions that have gotten long (> 50 lines) and are mixing multiple concerns and/or combining several different steps should be broken up. (Typically by using helper functions and/or separate classes to encapsulate individual concerns.)
 - Classes or files that are combining different concerns should be broken up, such that each class / file only deals with one primary concern.
@@ -191,7 +191,7 @@ Repetitive or duplicate code.
 
 ---
 
-### test_coverage
+## test_coverage
 
 - If the diff introduces significant new functionality, and the code base has existing unit and/or integration tests, new tests should be added to cover the new functionality.
 - If the diff changes the behavior of existing functionality that is covered by automated tests, those tests should be updated to reflect the new behavior.
@@ -202,7 +202,7 @@ Repetitive or duplicate code.
 
 ---
 
-### resource_leakage
+## resource_leakage
 
 - Focus on system resources that require explicit cleanup: file handles, network connections, database connections, memory allocations, and similar OS-level resources.
 - These resources must be reliably freed even if exceptions occur.
@@ -222,7 +222,7 @@ Repetitive or duplicate code.
 
 ---
 
-### dependency_management
+## dependency_management
 
 - Check all import statements in new or modified files. If new code imports a library or package that is not part of the language's standard library, verify that the dependency is listed in the repository's dependency/requirement files (e.g., requirements.txt, pyproject.toml, package.json, Gemfile, etc.).
 - If the diff removes the last remaining use of an external library or package, the dependency and/or requirement files in the repository should be updated to no longer include the library.
@@ -233,7 +233,7 @@ Repetitive or duplicate code.
 
 ---
 
-### insecure_code
+## insecure_code
 
 - Look for hard-coded secrets such as API keys, passwords, tokens, or credentials in the diff.
 - Check for variable names containing: 'token', 'key', 'secret', 'password', 'credential', 'auth'
@@ -252,7 +252,7 @@ Repetitive or duplicate code.
 
 ---
 
-### fails_silently
+## fails_silently
 
 Code that fails silently is code that ignores errors without reporting them.
 
@@ -266,7 +266,7 @@ Code that fails silently is code that ignores errors without reporting them.
 
 ---
 
-### instruction_file_disobeyed
+## instruction_file_disobeyed
 
 Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST be obeyed.
 
@@ -282,7 +282,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### abstraction_violation
+## abstraction_violation
 
 - Code that breaks established abstraction boundaries within the codebase.
 - Look for:
@@ -300,7 +300,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### logic_error
+## logic_error
 
 - Logic errors are flaws in the reasoning or flow of the code that would cause incorrect behavior.
 - Look for: off-by-one errors in loops or array indexing, incorrect conditional logic (wrong operators, inverted conditions), variable assignments that overwrite needed values, incorrect order of operations, missing or incorrect loop termination conditions, algorithms that don't match their intended purpose.
@@ -310,7 +310,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### runtime_error_risk
+## runtime_error_risk
 
 - Code patterns that are very likely to cause runtime errors during execution.
 - Check for version compatibility issues: usage of function parameters, APIs, or language features that are only available in specific versions of the language, standard library, or external dependencies (e.g., a keyword argument added in Python 3.10 will cause TypeError on Python 3.8/3.9).
@@ -321,7 +321,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### incorrect_algorithm
+## incorrect_algorithm
 
 - Code that implements an algorithm incorrectly for its stated purpose.
 - Look for: sorting algorithms with wrong comparison logic, search algorithms with incorrect termination, mathematical calculations with wrong formulas, data structure operations that don't maintain invariants, algorithms that don't handle edge cases (empty inputs, single elements).
@@ -329,7 +329,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### error_handling_missing
+## error_handling_missing
 
 - Missing error handling for operations that could reasonably fail.
 - Look for: file I/O without exception handling, network requests without timeout/retry logic, user input processing without validation, external API calls without error checking, database operations without transaction handling.
@@ -337,7 +337,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### async_correctness
+## async_correctness
 
 - Issues specific to asynchronous or concurrent code correctness.
 - Look for: missing await keywords on functions that are clearly async (defined with 'async def' or returning coroutines/Promises), improper async context manager usage, race conditions in async code, deadlock potential, shared state access without proper synchronization.
@@ -346,7 +346,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### type_safety_violation
+## type_safety_violation
 
 - Code that violates type safety expectations or could cause type-related runtime errors.
 - Look for: incorrect type assumptions, missing type checks before operations, unsafe type casting, attribute access on potentially None values.
@@ -354,7 +354,7 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 
 ---
 
-### correctness_syntax_issues
+## correctness_syntax_issues
 
 - The diff should not contain any syntax errors that would prevent the code from running.
 - CAREFULLY CHECK INDENTATION: In Python and other indentation-sensitive languages, verify that all function definitions, class definitions, and code blocks maintain proper indentation levels. Dedenting a function body to the module level or similar indentation errors are critical syntax issues.
@@ -368,18 +368,3 @@ Explicit instructions in files such as .claude.md, CLAUDE.md, and AGENTS.md MUST
 - A function's return statement is removed but callers still expect a return value.
 
 ---
-
-## Output Format
-
-After your analysis when you are creating the final json file of issues, make a JSON record with each of the following fields (in order) for each issue you decide is valid to report, and append it as a new line to the final output json file:
-
-- issue_type: the issue type code from above (e.g., "documentation_implementation_mismatch", "abstraction_violation", etc.)
-- description: a complete description of the problem
-- confidence_reasoning: the thought process for how confident you are that it is an issue at all
-- confidence: a confidence score between 0.0 and 1.0 (1.0 = absolutely certain it is an issue, 0.0 = no confidence at all, should roughly be the probability that it is an actual issue to 1 decimal place)
-- severity_reasoning: the thought process for how severe the issue is (assuming it were an issue, i.e., ignoring confidence)
-- severity: one of "CRITICAL", "MAJOR", "MINOR", or "NITPICK", where
-    - CRITICAL: must be fixed before merging; would cause major problems, crashes, or security issues
-    - MAJOR: should be fixed before merging; would cause significant issues or confusion
-    - MINOR: could be fixed before merging; would cause minor issues or inconveniences
-    - NITPICK: optional to fix; mostly stylistic or very minor issues

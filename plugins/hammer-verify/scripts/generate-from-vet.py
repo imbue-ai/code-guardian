@@ -36,7 +36,7 @@ def format_guide_section(guide) -> str:
     """Format a single IssueIdentificationGuide into a markdown section."""
     lines: list[str] = []
 
-    lines.append(f"### {guide.issue_code.value}")
+    lines.append(f"## {guide.issue_code.value}")
     lines.append("")
 
     lines.append(guide.guide)
@@ -134,7 +134,6 @@ def generate_branch_markdown(vet_modules) -> str:
     sections: list[str] = [BRANCH_PREAMBLE]
     for guide in guides:
         sections.append(format_guide_section(guide))
-    sections.append(BRANCH_OUTPUT_FORMAT)
     return "\n".join(sections)
 
 
