@@ -1,7 +1,7 @@
 ---
 name: autofix
 description: Automatically find and fix code issues in the current branch. Iteratively verifies, plans fixes, and implements them with separate commits. Defers all review to the end.
-allowed-tools: Bash:*, Read, Write, Task, AskUserQuestion
+allowed-tools: Bash:*, Read, Write, Agent, AskUserQuestion
 ---
 
 # Autofix
@@ -22,7 +22,7 @@ Write a brief description of what the branch is trying to do. This helps the dif
 
 ### Phase 2: Validate the Diff
 
-Read the diff validation prompt from [../validate-diff.md](../validate-diff.md). Spawn a Task subagent (`subagent_type: "general-purpose"`, `model: "haiku"`) with that prompt, providing the base branch name and the problem description.
+Read the diff validation prompt from [../validate-diff.md](../validate-diff.md). Spawn an Agent subagent (`subagent_type: "general-purpose"`, `model: "haiku"`) with that prompt, providing the base branch name and the problem description.
 
 Based on the subagent's response:
 - If the diff is empty, STOP and ask the user whether the work has been committed yet or whether the base branch is wrong.
@@ -36,7 +36,7 @@ Create the .autofix/plans directory if it does not already exist.
 Repeat up to 10 times:
 
 1. Record the current HEAD as `pre_iteration_head`.
-2. Read the supporting file [verify-and-fix.md](verify-and-fix.md) from this skill's directory. Spawn a single Task subagent (`subagent_type: "general-purpose"`) with its contents as the prompt. Prepend the line `Base branch for this project: {base_branch}` to the prompt.
+2. Read the supporting file [verify-and-fix.md](verify-and-fix.md) from this skill's directory. Spawn a single Agent subagent (`subagent_type: "general-purpose"`) with its contents as the prompt. Prepend the line `Base branch for this project: {base_branch}` to the prompt.
 
 4. After the subagent finishes, check if HEAD moved: compare `git rev-parse HEAD` to `pre_iteration_head`.
 5. If HEAD did not move, no fixes were made. The branch is clean (or remaining issues are unfixable). Stop looping.
