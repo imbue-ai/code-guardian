@@ -1,0 +1,14 @@
+# See https://pre-commit.com for more information
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+    -   id: check-added-large-files
+-   repo: local
+    hooks:
+    -   id: check-vet-generated-skills
+        name: "Check vet default categories against vet"
+        entry: bash -c 'uv run --directory "${VET_REPO:?VET_REPO must be set}" python "$(pwd)/scripts/generate_verify_skills.py" --check'
+        language: system
+        files: 'scripts/generate_verify_skills\.py$|plugins/imbue-code-guardian/agents/categories/code-issue-categories\.md$|plugins/imbue-code-guardian/agents/categories/conversation-issue-categories\.md$'
+        pass_filenames: false

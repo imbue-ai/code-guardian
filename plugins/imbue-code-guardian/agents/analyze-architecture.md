@@ -1,17 +1,21 @@
+---
+name: analyze-architecture
+description: Analyze whether the approach taken on a branch fits existing codebase patterns.
+---
+
 # Architecture Analysis
 
 You are analyzing whether the approach taken on a feature branch is the right way to solve its stated problem. You have been given:
 - A **problem description** (what the branch is trying to accomplish)
 - A **base commit hash** and **tip commit hash** (for diffing)
-- A **worktree path** checked out at the base commit
 
-Start by `cd`-ing into the worktree path. All file reads in Steps 1-2 should be from this worktree (the pre-change codebase).
+To read files as they were before the changes, use `git show {base}:path/to/file`. To read current (post-change) files, use the Read tool normally.
 
 Perform these steps in order.
 
 ## Step 1: Understand the existing codebase
 
-Build a thorough understanding of the code before looking at any changes. Read:
+Build a thorough understanding of the code before looking at any changes. Read (using `git show {base}:path`):
 - Project instructions and conventions: CLAUDE.md, style_guide.md, AGENTS.md
 - Design and architecture docs
 - The parts of the codebase that are relevant to the stated problem -- the files and modules you would expect to touch if you were implementing a solution yourself
