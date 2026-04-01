@@ -11,10 +11,9 @@ Output:
   plugins/imbue-code-guardian/agents/categories/code-issue-categories.md
   plugins/imbue-code-guardian/agents/categories/conversation-issue-categories.md
 
-Usage:
-    python scripts/generate_verify_skills.py --vet-repo /path/to/vet
-    VET_REPO=/path/to/vet python scripts/generate_verify_skills.py
-    python scripts/generate_verify_skills.py --check
+Usage (run from vet's environment since it imports vet):
+    uv run --directory /path/to/vet python /path/to/code-guardian/scripts/generate_verify_skills.py
+    VET_REPO=/path/to/vet uv run --directory $VET_REPO python scripts/generate_verify_skills.py --check
 """
 
 from __future__ import annotations
