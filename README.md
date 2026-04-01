@@ -1,10 +1,10 @@
-# hammer-verify
+# imbue-code-guardian
 
-A [Claude Code plugin](https://code.claude.com/docs/en/plugins) that automatically finds and fixes code issues on your current branch. It iteratively verifies your changes, plans and implements fixes as separate commits, then lets you review and keep or revert each one.
+A [Claude Code plugin](https://code.claude.com/docs/en/plugins) for automated code review enforcement. When enabled, a Stop hook blocks Claude from finishing until autofix, architecture verification, and conversation review have been run.
 
 ## How it works
 
-1. **Verify** - A fresh subagent diffs your branch against the base and scans for ~30 categories of issues (logic errors, security problems, missing tests, naming violations, etc.)
+1. **Verify** - A fresh agent diffs your branch against the base and scans for ~30 categories of issues (logic errors, security problems, missing tests, naming violations, etc.)
 2. **Fix** - Each issue gets a plan, an implementation, and its own commit
 3. **Repeat** - New iterations run with a clean context until no more issues are found (up to 10 rounds)
 4. **Review** - Every fix is presented for your approval. Rejected fixes are reverted automatically
@@ -13,15 +13,8 @@ A [Claude Code plugin](https://code.claude.com/docs/en/plugins) that automatical
 
 Requires [Claude Code](https://code.claude.com/docs/en/quickstart) v1.0.33 or later.
 
-Clone the repo and install the plugin:
-
-```bash
-git clone https://github.com/imbue-ai/hammer-verify.git
 ```
-
-```
-/plugin marketplace add ./hammer-verify
-/plugin install hammer-verify@hammer-verify
+claude plugin marketplace add imbue-ai/code-guardian && claude plugin install imbue-code-guardian@imbue-code-guardian
 ```
 
 ## Usage
@@ -29,7 +22,7 @@ git clone https://github.com/imbue-ai/hammer-verify.git
 Check out the branch you want to verify, then run:
 
 ```
-/hammer-verify:autofix
+/imbue-code-guardian:autofix
 ```
 or
 ```
@@ -41,6 +34,16 @@ The plugin will diff against `main` by default. To use a different base branch, 
 ```bash
 export GIT_BASE_BRANCH=origin/main
 ```
+
+## Enabling the stop hook
+
+The stop hook is off by default. After installing, enable enforcement:
+
+```
+/imbue-code-guardian:reviewer-enable
+```
+
+See [plugins/imbue-code-guardian/README.md](plugins/imbue-code-guardian/README.md) for full documentation on configuration, skills, and enforcement behavior.
 
 ## What it checks
 
