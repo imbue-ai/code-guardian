@@ -42,6 +42,8 @@ Individual gates can be disabled with `/imbue-code-guardian:reviewer-disable`.
 - **reviewer-ci-enable / disable** -- Toggle the CI gate.
 - **reviewer-verify-conversation-enable / disable** -- Toggle the conversation review gate.
 - **reviewer-verify-architecture-enable / disable** -- Toggle the architecture verification gate.
+- **reviewer-blocking-disable / enable** -- Toggle non-blocking mode. When disabled, the hook reminds once then lets the agent through instead of enforcing.
+- **reviewer-max-tries** -- Set the exact number of times the hook will block before letting the agent through (default 3, set to 1 for remind-only).
 
 ## How enforcement works
 
@@ -52,7 +54,7 @@ Gates checked:
 - **Architecture verification** -- per-branch (runs once, persists across commits)
 - **Conversation review** -- per-commit
 
-A safety hatch prevents infinite loops: after 3 consecutive blocks at the same commit, the hook lets the agent through and clears the tracker.
+A safety hatch prevents infinite loops: after N consecutive blocks at the same commit (default 3, configurable via `stop_hook.max_consecutive_blocks`), the hook lets the agent through and clears the tracker. Set to 1 via `/reviewer-blocking-disable` for "remind once" mode.
 
 ## Issue categories
 
