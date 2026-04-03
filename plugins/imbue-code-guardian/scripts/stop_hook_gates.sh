@@ -132,6 +132,53 @@ if [[ ${#MISSING[@]} -eq 0 ]]; then
     exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Background agent check: if review agents are already running in the
+# background, don't block -- let the agent stop and allow the background
+# agents to finish producing their output files.
+#
+# Active agents are tracked by SubagentStart/SubagentStop hooks in
+# .reviewer/outputs/active_agents/{agent_id} (contents = agent_type).
+#
+# Staleness guard: SubagentStop is not guaranteed to fire in all cases
+# (see anthropics/claude-code#33049), so tracking files may be left
+# behind. Ignore any file older than 30 minutes to avoid permanently
+# disabling the stop hook due to stale state.
+# ---------------------------------------------------------------------------
+ACTIVE_AGENTS_DIR=".reviewer/outputs/active_agents"
+STALE_THRESHOLD_MIN=30
+if [[ -d "$ACTIVE_AGENTS_DIR" ]]; then
+    ACTIVE_REVIEW_AGENTS=()
+    for agent_file in "$ACTIVE_AGENTS_DIR"/*; do
+        [[ -f "$agent_file" ]] || continue
+
+        # Remove stale tracking files (older than STALE_THRESHOLD_MIN minutes)
+        if [[ "$(uname)" == "Darwin" ]]; then
+            file_age_min=$(( ( $(date +%s) - $(stat -f %m "$agent_file") ) / 60 ))
+        else
+            file_age_min=$(( ( $(date +%s) - $(stat -c %Y "$agent_file") ) / 60 ))
+        fi
+        if [[ $file_age_min -ge $STALE_THRESHOLD_MIN ]]; then
+            rm -f "$agent_file"
+            continue
+        fi
+
+        agent_type=$(cat "$agent_file" 2>/dev/null || true)
+        case "$agent_type" in
+            validate-diff|verify-and-fix|analyze-architecture|review-conversation)
+                ACTIVE_REVIEW_AGENTS+=("$agent_type")
+                ;;
+        esac
+    done
+
+    if [[ ${#ACTIVE_REVIEW_AGENTS[@]} -gt 0 ]]; then
+        # Deduplicate for display
+        UNIQUE_TYPES=$(printf '%s\n' "${ACTIVE_REVIEW_AGENTS[@]}" | sort -u | tr '\n' ', ' | sed 's/,$//')
+        echo "Review agents are running in the background ($UNIQUE_TYPES). Letting the agent stop; gates will pass once they finish." >&2
+        exit 0
+    fi
+fi
+
 # Record this blocked attempt for stuck detection
 mkdir -p "$(dirname "$BLOCK_TRACKER")" 2>/dev/null || true
 echo "$HASH" >> "$BLOCK_TRACKER" 2>/dev/null || true

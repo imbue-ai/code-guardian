@@ -1,5 +1,25 @@
 {
   "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); AGENT_TYPE=$(echo \"$INPUT\" | jq -r '.agent_type // empty'); case \"$AGENT_TYPE\" in validate-diff|verify-and-fix|analyze-architecture|review-conversation) mkdir -p .reviewer/outputs/active_agents && echo \"$AGENT_TYPE\" > \".reviewer/outputs/active_agents/$(echo \"$INPUT\" | jq -r '.agent_id')\" ;; esac; exit 0"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); AGENT_ID=$(echo \"$INPUT\" | jq -r '.agent_id // empty'); rm -f \".reviewer/outputs/active_agents/$AGENT_ID\" 2>/dev/null; exit 0"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
