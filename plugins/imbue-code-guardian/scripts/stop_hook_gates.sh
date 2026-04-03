@@ -9,7 +9,9 @@ set -euo pipefail
 #
 # Safety hatch: after N consecutive blocks at the same state (default 3,
 # configurable via stop_hook.max_consecutive_blocks), exits 0 with a
-# warning instead of blocking forever. Set to 1 for "remind once" mode.
+# warning instead of blocking forever. This prevents infinite loops when
+# the agent cannot make progress (e.g., waiting for user input). Set to
+# 1 for "remind once" mode.
 #
 # Usage:
 #   ./stop_hook_gates.sh [COMMIT_HASH]
