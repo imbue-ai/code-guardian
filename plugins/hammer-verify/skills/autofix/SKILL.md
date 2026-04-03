@@ -26,7 +26,7 @@ Read the diff validation prompt from [../validate-diff.md](../validate-diff.md).
 
 Based on the agent's response:
 - If the diff is empty, STOP and ask the user whether the work has been committed yet or whether the base branch is wrong.
-- If it reports significant unrelated changes, STOP and ask the user what the correct base branch is.
+- If it reports significant unrelated changes, STOP and ask the user. This includes cases where the branch has diverged from the base branch due to merges or other work -- even if the extra changes are "expected," they are not in scope. Proceeding with out-of-scope changes wastes context and causes the fix agent to review and potentially "fix" irrelevant code. There is no valid reason to skip this step. The only remedies available here are: ask the user for the correct base branch, or ask the user which changes to focus on (then explicitly tell the fix agent to ignore the rest).
 - If it reports the work looks incomplete, note this but proceed -- autofix works on whatever is there.
 
 ### Phase 3: Fix Loop

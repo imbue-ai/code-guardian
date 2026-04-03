@@ -22,7 +22,7 @@ Read the diff validation prompt from [../validate-diff.md](../validate-diff.md).
 
 Based on the agent's response:
 - If the diff is empty, STOP and ask the user whether the work has been committed yet or whether the base branch is wrong.
-- If it reports significant unrelated changes, you MUST stop and consult the user -- do not dismiss this or proceed on your own. Unrelated changes in the diff will cause the analysis agent to waste effort on irrelevant code and produce worse results. Explain that this skill can only verify one logical change at a time. Ask which change they want to focus on (e.g. the main goal of the branch vs. an incidental fix). Then when spawning the analysis agent in Phase 4, explicitly tell it to ignore the changes that are not part of the chosen focus.
+- If it reports significant unrelated changes, STOP and ask the user. This includes cases where the branch has diverged from the base branch due to merges or other work -- even if the extra changes are "expected," they are not in scope. Proceeding with out-of-scope changes wastes context and causes the analysis agent to review irrelevant code. There is no valid reason to skip this step. The only remedies available here are: ask the user for the correct base branch, or ask which changes to focus on (then explicitly tell the analysis agent in Phase 4 to ignore the rest).
 - If it reports the work looks incomplete, flag that to the user and ask whether to proceed anyway.
 
 ## Phase 3: Prepare a Worktree
