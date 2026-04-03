@@ -1,15 +1,16 @@
 {
-  "name": "hammer-verify",
+  "name": "imbue-code-guardian",
   "owner": {
-    "name": "evgunter",
-    "url": "https://github.com/evgunter"
+    "name": "Imbue"
+  },
+  "metadata": {
+    "description": "Code review enforcement tools by Imbue"
   },
   "plugins": [
     {
-      "name": "hammer-verify",
-      "description": "Automated code verification and fixing",
-      "version": "0.1.0",
-      "source": "./plugins/hammer-verify"
+      "name": "imbue-code-guardian",
+      "source": "./plugins/imbue-code-guardian",
+      "description": "Automated code review enforcement. Runs autofix, architecture verification, and conversation review -- and blocks sessions from finishing until they pass."
     }
   ]
 }
