@@ -174,7 +174,7 @@ if [[ -d "$ACTIVE_AGENTS_DIR" ]]; then
     if [[ ${#ACTIVE_REVIEW_AGENTS[@]} -gt 0 ]]; then
         # Deduplicate for display
         UNIQUE_TYPES=$(printf '%s\n' "${ACTIVE_REVIEW_AGENTS[@]}" | sort -u | tr '\n' ', ' | sed 's/,$//')
-        echo "Review agents are running in the background ($UNIQUE_TYPES). Letting the agent stop; gates will pass once they finish." >&2
+        echo "Review agents are running: $UNIQUE_TYPES; skipping gate enforcement." >&2
         exit 0
     fi
 fi
