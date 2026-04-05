@@ -108,3 +108,11 @@ If the agent found no issues or no transcript was available, use the Write tool 
 If the output file contains any issues, summarize them briefly. For each CRITICAL or MAJOR issue with confidence >= 0.7, describe it clearly so the agent can address it.
 
 If there are no issues, report that the conversation was verified clean.
+
+# RUN TIME OVERRIDE
+
+For *this particular run* of the `verify-conversation` command, follow these adjustments from the user to the normal process:
+
+```
+$ARGUMENTS
+```

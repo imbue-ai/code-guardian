@@ -58,3 +58,11 @@ Replace any `/` in the branch name with `_` (e.g., `mngr/my-feature` becomes `mn
 ## Important: when to re-run
 
 Architecture verification is per-branch, not per-commit. You do NOT need to re-run it after every commit. However, if you later make changes that fundamentally alter the approach (new abstractions, changed data flow, different module boundaries), you should run /verify-architecture again to confirm the new direction is sound.
+
+# RUN TIME OVERRIDE
+
+For *this particular run* of the `verify-architecture` command, follow these adjustments from the user to the normal process:
+
+```
+$ARGUMENTS
+```
