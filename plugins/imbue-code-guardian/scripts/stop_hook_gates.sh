@@ -141,6 +141,8 @@ for item in "${MISSING[@]}"; do
     echo "  - ${item}" >&2
 done
 echo "" >&2
+echo "The base branch for this work is: $BASE_BRANCH -- pass this to any verification commands that compare against a base branch." >&2
+echo "" >&2
 if [[ ${#MISSING[@]} -gt 1 ]]; then
     GUIDANCE="Run these before finishing."
     if [[ "$ARCH_NEEDED" == "true" ]] && [[ "$AUTOFIX_NEEDED" == "true" ]]; then
