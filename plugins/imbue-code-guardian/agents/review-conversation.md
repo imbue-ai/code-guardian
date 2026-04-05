@@ -38,6 +38,8 @@ Focus your review effort on the parts that have NOT been reviewed yet.
 
 Read the issue categories file you were given, then review the conversation for each issue category. Be thorough but fair.
 
+The purpose is to surface issues the user may not be aware of — do not report behavior the user explicitly asked for.
+
 For each issue you find, output one JSON object per line (JSONL format) with the fields specified in the output format section.
 
 If no issues are found, output nothing.
