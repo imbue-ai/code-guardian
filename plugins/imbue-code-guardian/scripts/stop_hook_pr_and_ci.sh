@@ -5,11 +5,11 @@
 # Two-phase PR and CI management for the stop hook orchestrator.
 #
 # Phase 1 (ensure-pr): Check that a PR exists for the current branch.
-#   Reopens closed PRs. Writes PR number/URL to .claude/ for downstream use.
+#   Reopens closed PRs. Writes PR number/URL to .reviewer/outputs/ for downstream use.
 #   Called early by the orchestrator so CI starts running in parallel.
 #
 # Phase 2 (poll-ci): Poll CI status for a given PR number.
-#   Reads timeout/interval from config. Writes result to .claude/pr_status.
+#   Reads timeout/interval from config. Writes result to .reviewer/outputs/pr_status.
 #   Called later by the orchestrator as a gate alongside review gates.
 #
 # Usage:
@@ -50,7 +50,7 @@ _ensure_pr() {
         if [[ "$require_pr" != "true" ]]; then
             log_info "No PR found and ci.require_pr=false, skipping CI"
             _log_to_file "INFO" "No PR, require_pr=false, skipping"
-            echo "" > .claude/pr_number
+            echo "" > .reviewer/outputs/pr_number
             exit 0
         fi
         log_error "No PR found for branch $current_branch."
@@ -62,7 +62,7 @@ _ensure_pr() {
     if [[ "$pr_state" == "MERGED" ]]; then
         log_info "PR #$existing_pr is already merged, skipping CI polling"
         _log_to_file "INFO" "PR #$existing_pr already merged, skipping CI polling"
-        echo "" > .claude/pr_number
+        echo "" > .reviewer/outputs/pr_number
         exit 0
     fi
 
@@ -77,19 +77,19 @@ _ensure_pr() {
     fi
 
     # Write PR number for downstream use
-    mkdir -p .claude 2>/dev/null || true
-    echo "$existing_pr" > .claude/pr_number
+    mkdir -p .reviewer/outputs 2>/dev/null || true
+    echo "$existing_pr" > .reviewer/outputs/pr_number
 
     # Write PR URL for status line display
     local pr_url
     pr_url=$(gh pr view "$existing_pr" --json url --jq '.url' 2>/dev/null || echo "")
     if [[ -n "$pr_url" ]]; then
-        echo "$pr_url" > .claude/pr_url
-        log_info "Wrote PR URL to .claude/pr_url: $pr_url"
+        echo "$pr_url" > .reviewer/outputs/pr_url
+        log_info "Wrote PR URL to .reviewer/outputs/pr_url: $pr_url"
     fi
 
     # Initialize status as pending
-    echo "pending" > .claude/pr_status
+    echo "pending" > .reviewer/outputs/pr_status
 
     _log_to_file "INFO" "ensure-pr completed (pr=$existing_pr)"
 }
@@ -113,12 +113,12 @@ _poll_ci() {
     log_info "Polling for PR #$pr_number check results..."
     if RESULT=$("$SCRIPT_DIR/poll_pr_checks.sh" --timeout "$ci_timeout" --interval "$ci_interval" "$pr_number"); then
         echo "$RESULT"
-        echo "success" > .claude/pr_status
-        log_info "Wrote PR status to .claude/pr_status: success"
+        echo "success" > .reviewer/outputs/pr_status
+        log_info "Wrote PR status to .reviewer/outputs/pr_status: success"
         _log_to_file "INFO" "PR checks passed"
     else
-        echo "failure" > .claude/pr_status
-        log_info "Wrote PR status to .claude/pr_status: failure"
+        echo "failure" > .reviewer/outputs/pr_status
+        log_info "Wrote PR status to .reviewer/outputs/pr_status: failure"
         log_error "CI tests have failed for the PR!"
         log_error "Use the gh tool to inspect the remote test results for this branch and see what failed."
         log_error "Note that you MUST identify the issue and fix it locally before trying again!"

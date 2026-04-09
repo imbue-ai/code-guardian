@@ -208,7 +208,7 @@ PR_NUMBER=""
 if [[ "$CI_ENABLED" == "true" ]]; then
     _log_to_file "INFO" "Checking PR existence..."
     if "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" ensure-pr; then
-        PR_NUMBER=$(cat .claude/pr_number 2>/dev/null || echo "")
+        PR_NUMBER=$(cat .reviewer/outputs/pr_number 2>/dev/null || echo "")
         _log_to_file "INFO" "PR check passed (pr_number=$PR_NUMBER)"
     else
         PR_CI_EXIT=$?
