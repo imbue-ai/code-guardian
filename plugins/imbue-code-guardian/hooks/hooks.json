@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/stop_hook_gates.sh"
+            "timeout": 900,
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/stop_hook_orchestrator.sh"
           }
         ]
       }
