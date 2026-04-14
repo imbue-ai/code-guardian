@@ -162,10 +162,10 @@ echo "" >&2
 if [[ ${#MISSING[@]} -gt 1 ]]; then
     GUIDANCE="Run these before finishing."
     if [[ "$ARCH_NEEDED" == "true" ]] && [[ "$AUTOFIX_NEEDED" == "true" ]]; then
-        GUIDANCE="${GUIDANCE} Address any issues raised by ${ARCH_CMD} before running /autofix <args>, since architecture changes may make autofix results obsolete."
+        GUIDANCE="${GUIDANCE} Address any issues raised by /verify-architecture <args> before running /autofix <args>, since architecture changes may make autofix results obsolete."
     fi
     if [[ "$CONVO_NEEDED" == "true" ]]; then
-        GUIDANCE="${GUIDANCE} If possible, run ${CONVO_CMD} in the background while running the others. After the foreground tasks finish, block on any background tasks you launched (e.g. ${CONVO_CMD}) before finishing."
+        GUIDANCE="${GUIDANCE} If possible, run /verify-conversation <args> in the background while running the others. After the foreground tasks finish, block on any background tasks you launched (e.g. /verify-conversation <args>) before finishing."
     fi
     echo "$GUIDANCE" >&2
 fi
