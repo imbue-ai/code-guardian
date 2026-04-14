@@ -165,7 +165,7 @@ if [[ ${#MISSING[@]} -gt 1 ]]; then
         GUIDANCE="${GUIDANCE} Address any issues raised by ${ARCH_CMD} before running /autofix <args>, since architecture changes may make autofix results obsolete."
     fi
     if [[ "$CONVO_NEEDED" == "true" ]]; then
-        GUIDANCE="${GUIDANCE} If possible, run ${CONVO_CMD} in the background while running the others."
+        GUIDANCE="${GUIDANCE} If possible, run ${CONVO_CMD} in the background while running the others. After the foreground tasks finish, block on any background tasks you launched (e.g. ${CONVO_CMD}) before finishing."
     fi
     echo "$GUIDANCE" >&2
 fi
