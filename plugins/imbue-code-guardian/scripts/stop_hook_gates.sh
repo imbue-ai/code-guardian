@@ -165,7 +165,7 @@ if [[ ${#MISSING[@]} -gt 1 ]]; then
         GUIDANCE="${GUIDANCE} Address any issues raised by /verify-architecture before running /autofix, since architecture changes may make autofix results obsolete."
     fi
     if [[ "$CONVO_NEEDED" == "true" ]]; then
-        GUIDANCE="${GUIDANCE} If possible, run /verify-conversation in the background while running the others."
+        GUIDANCE="${GUIDANCE} If possible, run ${CONVO_CMD} in the background while running the others."
     fi
     echo "$GUIDANCE" >&2
 fi
