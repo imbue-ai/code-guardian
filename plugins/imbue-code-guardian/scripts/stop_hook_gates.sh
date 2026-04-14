@@ -162,7 +162,7 @@ echo "" >&2
 if [[ ${#MISSING[@]} -gt 1 ]]; then
     GUIDANCE="Run these before finishing."
     if [[ "$ARCH_NEEDED" == "true" ]] && [[ "$AUTOFIX_NEEDED" == "true" ]]; then
-        GUIDANCE="${GUIDANCE} Address any issues raised by /verify-architecture before running /autofix, since architecture changes may make autofix results obsolete."
+        GUIDANCE="${GUIDANCE} Address any issues raised by ${ARCH_CMD} before running /autofix <args>, since architecture changes may make autofix results obsolete."
     fi
     if [[ "$CONVO_NEEDED" == "true" ]]; then
         GUIDANCE="${GUIDANCE} If possible, run ${CONVO_CMD} in the background while running the others."
@@ -172,6 +172,6 @@ fi
 # If any per-commit gate is enabled, note that gates may fire repeatedly.
 if [[ "$AUTOFIX_ENABLED" == "true" ]] || [[ "$CONVO_ENABLED" == "true" ]]; then
     echo "" >&2
-    echo "Note: these gates may fire again after you make changes. /verify-conversation is incremental and only reviews new content. For /autofix, the default is to run the full check, but if your changes since the last autofix run are focused, you may pass instructions telling it to focus on the diff since the last run (while still providing the true base branch)." >&2
+    echo "Note: these gates may fire again after you make changes. /verify-conversation <args> is incremental and only reviews new content. For /autofix <args>, the default is to run the full check, but if your changes since the last autofix run are focused, you may pass instructions telling it to focus on the diff since the last run (while still providing the true base branch)." >&2
 fi
 exit 2
