@@ -318,8 +318,6 @@ fi
 rm -f "$BLOCK_TRACKER"
 _cleanup_temp
 
-# Write a success marker so downstream hooks (e.g. mngr's wait_for_stop_hook)
-# can detect that the full pipeline passed.
 mkdir -p .reviewer/outputs 2>/dev/null || true
 echo "$HASH" > .reviewer/outputs/orchestrator_success
 
