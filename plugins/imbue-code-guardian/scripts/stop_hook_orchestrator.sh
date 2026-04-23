@@ -280,7 +280,19 @@ fi
 wait "$GATES_PID" || GATES_EXIT=$?
 _log_to_file "INFO" "Gates process exited with code $GATES_EXIT"
 
-# Wait for CI if launched
+# If gates failed, short-circuit: terminate CI polling and report immediately.
+# Otherwise the agent is forced to wait out the full CI poll timeout (up to
+# ci.timeout seconds, default 600) before learning that a gate failed in the
+# first 0.5s -- even though CI results don't change what they need to do next.
+if [[ -n "$CI_PID" ]] && [[ $GATES_EXIT -ne 0 ]]; then
+    _log_to_file "INFO" "Gates failed; terminating CI poll early (pid=$CI_PID)"
+    pkill -TERM -P "$CI_PID" 2>/dev/null || true
+    kill -TERM "$CI_PID" 2>/dev/null || true
+    wait "$CI_PID" 2>/dev/null || true
+    CI_PID=""
+fi
+
+# Wait for CI if still running
 if [[ -n "$CI_PID" ]]; then
     wait "$CI_PID" || CI_EXIT=$?
     _log_to_file "INFO" "CI process exited with code $CI_EXIT"
