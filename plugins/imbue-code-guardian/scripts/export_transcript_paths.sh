@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Print paths to Claude Code session JSONL files for all sessions.
 # Outputs one line per file: "<source>\t<path>"
-# where source is one of: mngr_tracked, current, mngr_agent_dir,
-# or a subagent variant like mngr_tracked:subagent, current:subagent, etc.
+# where source is one of: tracked, current, agent_dir,
+# or a subagent variant like tracked:subagent, current:subagent, etc.
 #
 # Discovery is controlled by .reviewer/settings.json (under verify_conversation),
 # with optional local overrides from .reviewer/settings.local.json.
 # If the config file is not present, all toggles default to true.
 #
-# Session IDs are read from $MNGR_AGENT_STATE_DIR/claude_session_id_history.
+# Session IDs are read from $MNGR_AGENT_STATE_DIR/claude_session_id_history
+# (a mngr integration point -- see https://github.com/imbue-ai/mngr).
 # If $MNGR_CLAUDE_SESSION_ID is set and not already in the history, it is
 # included in the output so the current session is always covered.
+# Both env vars are optional: without them, the "tracked" and "current"
+# sections emit nothing and only the agent_dir scan runs.
 # The agent_dir mode scans $CLAUDE_CONFIG_DIR/projects/ for all .jsonl files.
 
 set -euo pipefail
@@ -73,6 +76,9 @@ _TRACKED_SESSION_IDS=()
 declare -A _SEEN_SIDS
 
 if [ "$INCLUDE_TRACKED" = "true" ]; then
+    # Integration with mngr (https://github.com/imbue-ai/mngr): its SessionStart
+    # hook appends each new Claude session ID to this history file. Without
+    # mngr setting $MNGR_AGENT_STATE_DIR, this branch is a no-op.
     if [ -n "${MNGR_AGENT_STATE_DIR:-}" ] && [ -f "$MNGR_AGENT_STATE_DIR/claude_session_id_history" ]; then
         while read -r sid _rest; do
             if [ -n "$sid" ] && [ -z "${_SEEN_SIDS[$sid]:-}" ]; then
@@ -85,8 +91,8 @@ if [ "$INCLUDE_TRACKED" = "true" ]; then
     for sid in "${_TRACKED_SESSION_IDS[@]}"; do
         file=$(_find_session_file "$sid")
         if [ -n "$file" ]; then
-            _emit "mngr_tracked" "$file"
-            [ "$INCLUDE_SUBAGENTS" = "true" ] && _emit_subagents "mngr_tracked" "$file"
+            _emit "tracked" "$file"
+            [ "$INCLUDE_SUBAGENTS" = "true" ] && _emit_subagents "tracked" "$file"
         fi
     done
 fi
@@ -94,6 +100,8 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Current session (only if not already emitted via tracked)
 # ---------------------------------------------------------------------------
+# mngr (https://github.com/imbue-ai/mngr) exports MNGR_CLAUDE_SESSION_ID for
+# the live session. Optional: skipped if unset.
 if [ "$INCLUDE_CURRENT" = "true" ] && [ -n "${MNGR_CLAUDE_SESSION_ID:-}" ]; then
     if [ -z "${_SEEN_SIDS[$MNGR_CLAUDE_SESSION_ID]:-}" ]; then
         _SEEN_SIDS[$MNGR_CLAUDE_SESSION_ID]=1
@@ -117,8 +125,8 @@ if [ "$INCLUDE_AGENT_DIR" = "true" ]; then
             case "$jsonl_file" in
                 */subagents/*) continue ;;
             esac
-            _emit "mngr_agent_dir" "$jsonl_file"
-            [ "$INCLUDE_SUBAGENTS" = "true" ] && _emit_subagents "mngr_agent_dir" "$jsonl_file"
+            _emit "agent_dir" "$jsonl_file"
+            [ "$INCLUDE_SUBAGENTS" = "true" ] && _emit_subagents "agent_dir" "$jsonl_file"
         done < <(find "$search_dir" -name '*.jsonl' 2>/dev/null | sort)
     fi
 fi

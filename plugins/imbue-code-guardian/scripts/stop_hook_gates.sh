@@ -3,23 +3,17 @@ set -euo pipefail
 #
 # stop_hook_gates.sh
 #
-# Check whether autofix verification, architecture verification, and
+# Pure gate checker: verifies that autofix, architecture verification, and
 # conversation review have been completed. Exits 0 if all enabled gates
 # pass, 2 if any are missing.
 #
-# Safety hatch: after N consecutive blocks at the same state (default 3,
-# configurable via stop_hook.max_consecutive_blocks), exits 0 with a
-# warning instead of blocking forever. This prevents infinite loops when
-# the agent cannot make progress (e.g., waiting for user input). Set to
-# 1 for "remind once" mode.
+# Stuck agent detection is handled by the orchestrator
+# (stop_hook_orchestrator.sh), not by this script.
 #
 # Usage:
 #   ./stop_hook_gates.sh [COMMIT_HASH]
 #
 # If COMMIT_HASH is omitted, uses the current HEAD.
-#
-# This script is used by:
-#   - The imbue-code-guardian Claude Code plugin (as a standalone Stop hook)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=config_utils.sh
@@ -27,25 +21,10 @@ source "$SCRIPT_DIR/config_utils.sh"
 
 REVIEWER_SETTINGS=".reviewer/settings.json"
 
-# By default, the stop hook is disabled. To enable it, set
-# stop_hook.enabled_when to a shell expression in .reviewer/settings.json
-# (or .reviewer/settings.local.json). The expression is evaluated with
-# bash -c; if it exits 0, the hook runs. Examples:
-#
-#   "true"                                     -- always run
-#   "test -n \"${MNGR_AGENT_STATE_DIR:-}\""     -- only mngr-managed sessions
-#
-ENABLED_WHEN=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.enabled_when" "")
-if [[ -z "$ENABLED_WHEN" ]]; then
-    exit 0
-fi
-if ! bash -c "$ENABLED_WHEN" 2>/dev/null; then
-    exit 0
-fi
+# Read base branch from config (consistent with orchestrator)
+BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
 
 # Skip gates when there are no code changes vs the base branch.
-# Uses the same GIT_BASE_BRANCH env var that the verification skills use.
-BASE_BRANCH="${GIT_BASE_BRANCH:-main}"
 if git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
     CODE_DIFF=$(git diff "$BASE_BRANCH"...HEAD 2>/dev/null || true)
     if [[ -z "$CODE_DIFF" ]]; then
@@ -54,41 +33,6 @@ if git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
 fi
 
 HASH="${1:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
-
-# ---------------------------------------------------------------------------
-# Safety hatch: prevent infinite stop-hook loops.
-#
-# Track consecutive blocks in .reviewer/outputs/stop_hook_consecutive_blocks.
-# Each line is a commit hash from a blocked attempt. If the last N
-# entries are all the same hash, the agent is stuck -- let it through.
-# N defaults to 3 but is configurable via stop_hook.max_consecutive_blocks.
-# Setting it to 1 makes the hook non-binding: it reminds once, then
-# lets the agent through.
-# ---------------------------------------------------------------------------
-MAX_CONSECUTIVE_BLOCKS=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.max_consecutive_blocks" "3")
-BLOCK_TRACKER=".reviewer/outputs/stop_hook_consecutive_blocks"
-
-_count_consecutive_blocks() {
-    if [[ ! -f "$BLOCK_TRACKER" ]]; then
-        echo 0
-        return
-    fi
-    # Count how many of the last N entries match the CURRENT hash.
-    local match_count
-    match_count=$(tail -n "$MAX_CONSECUTIVE_BLOCKS" "$BLOCK_TRACKER" | grep -c "^${HASH}$" || true)
-    echo "$match_count"
-}
-
-CONSECUTIVE_BLOCKS=$(_count_consecutive_blocks)
-if [[ $CONSECUTIVE_BLOCKS -ge $MAX_CONSECUTIVE_BLOCKS ]]; then
-    echo "SAFETY HATCH: Stop hook has blocked ${MAX_CONSECUTIVE_BLOCKS} consecutive times at the same commit ($HASH)." >&2
-    echo "Letting the agent through to prevent an infinite loop." >&2
-    echo "The review gates are still unsatisfied -- please investigate manually." >&2
-    # Clear the tracker so that if a NEW session starts at the same
-    # commit, the hooks re-engage from scratch.
-    rm -f "$BLOCK_TRACKER"
-    exit 0
-fi
 
 AUTOFIX_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "autofix.is_enabled" "true")
 CONVO_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "verify_conversation.is_enabled" "true")
@@ -145,14 +89,8 @@ if [[ "$CONVO_NEEDED" == "true" ]]; then
 fi
 
 if [[ ${#MISSING[@]} -eq 0 ]]; then
-    # All gates passed -- clear the block tracker
-    rm -f "$BLOCK_TRACKER"
     exit 0
 fi
-
-# Record this blocked attempt for stuck detection
-mkdir -p "$(dirname "$BLOCK_TRACKER")" 2>/dev/null || true
-echo "$HASH" >> "$BLOCK_TRACKER" 2>/dev/null || true
 
 echo "The following review gates have not been satisfied:" >&2
 for item in "${MISSING[@]}"; do
@@ -165,7 +103,7 @@ if [[ ${#MISSING[@]} -gt 1 ]]; then
         GUIDANCE="${GUIDANCE} Address any issues raised by /verify-architecture before running /autofix, since architecture changes may make autofix results obsolete."
     fi
     if [[ "$CONVO_NEEDED" == "true" ]]; then
-        GUIDANCE="${GUIDANCE} If possible, run /verify-conversation in the background while running the others. After the foreground tasks finish, block on any background tasks you launched (e.g. /verify-conversation) before finishing."
+        GUIDANCE="${GUIDANCE} If possible, run /verify-conversation in the background while running the others."
     fi
     echo "$GUIDANCE" >&2
 fi
