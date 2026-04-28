@@ -10,17 +10,34 @@ set -euo pipefail
 #   val=$(read_json_config "path/to/config.json" "key_name" "default_value")
 #   val=$(read_json_config "path/to/config.json" "nested.key" "default_value")
 #
-# For each config file, a .local.json sibling is checked first. For example,
-# if the config path is "foo/bar.json", the function first checks "foo/bar.local.json".
+# Lookup precedence (first non-empty wins):
+#   1. Environment variable CODE_GUARDIAN_<KEY> (dotted key uppercased, dots
+#      replaced with double underscores so the section boundary is recoverable;
+#      e.g. "stop_hook.base_branch" -> CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH).
+#   2. The .local.json sibling of the config file (e.g. settings.local.json).
+#   3. The config file itself.
+#   4. The provided default.
+#
 # Local configs are gitignored and take precedence over checked-in configs.
+# Env vars take precedence over both, so per-process / per-agent overrides
+# work without touching any file.
 
-# Read a single key from a JSON config file with local-override support.
+# Read a single key from a JSON config file with env-var and local-override
+# support.
 # Args: <config_path> <key> <default>
 read_json_config() {
     local config_path="$1"
     local key="$2"
     local default="$3"
     local val
+
+    # Env-var override: CODE_GUARDIAN_<KEY uppercased, dots -> __>
+    local env_var
+    env_var="CODE_GUARDIAN_$(echo "$key" | tr '[:lower:]' '[:upper:]' | sed 's/\./__/g')"
+    if [ -n "${!env_var:-}" ]; then
+        echo "${!env_var}"
+        return
+    fi
 
     # Derive .local.json path: foo/bar.json -> foo/bar.local.json
     local local_path="${config_path%.json}.local.json"
