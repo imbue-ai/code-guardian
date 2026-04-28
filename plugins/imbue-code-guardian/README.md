@@ -49,6 +49,14 @@ When enabled, the stop hook orchestrator runs every time Claude finishes a respo
 
 Settings live in `.reviewer/settings.json` (checked-in project defaults) with `.reviewer/settings.local.json` overrides (gitignored, per-worktree).
 
+Every config key also has a corresponding environment variable that takes precedence over both files. The mapping is `key.subkey` → `IMBUE_REVIEWER_KEY_SUBKEY` (uppercased, dots replaced with underscores). For example:
+
+- `stop_hook.base_branch` → `IMBUE_REVIEWER_STOP_HOOK_BASE_BRANCH`
+- `ci.is_enabled` → `IMBUE_REVIEWER_CI_IS_ENABLED`
+- `autofix.append_to_prompt` → `IMBUE_REVIEWER_AUTOFIX_APPEND_TO_PROMPT`
+
+Lookup precedence (first non-empty wins): env var → `settings.local.json` → `settings.json` → built-in default. An unset env var, or one set to the empty string, falls through to the file lookup.
+
 ### Enable/disable skills
 
 - **reviewer-enable** -- Enable the stop hook. Optionally takes a shell expression for when to enforce.
