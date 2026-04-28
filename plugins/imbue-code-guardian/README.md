@@ -50,11 +50,11 @@ When enabled, the stop hook orchestrator runs every time Claude finishes a respo
 
 Settings live in `.reviewer/settings.json` (checked-in project defaults) with `.reviewer/settings.local.json` overrides (gitignored, per-worktree).
 
-Every config key also has a corresponding environment variable that takes precedence over both files. The mapping is `key.subkey` → `CODE_GUARDIAN_KEY_SUBKEY` (uppercased, dots replaced with underscores). For example:
+Every config key also has a corresponding environment variable that takes precedence over both files. The mapping is `key.subkey` → `CODE_GUARDIAN_KEY__SUBKEY` (uppercased, dots replaced with double underscores so the section boundary stays recoverable from the env var name). For example:
 
-- `stop_hook.base_branch` → `CODE_GUARDIAN_STOP_HOOK_BASE_BRANCH`
-- `ci.is_enabled` → `CODE_GUARDIAN_CI_IS_ENABLED`
-- `autofix.append_to_prompt` → `CODE_GUARDIAN_AUTOFIX_APPEND_TO_PROMPT`
+- `stop_hook.base_branch` → `CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH`
+- `ci.is_enabled` → `CODE_GUARDIAN_CI__IS_ENABLED`
+- `autofix.append_to_prompt` → `CODE_GUARDIAN_AUTOFIX__APPEND_TO_PROMPT`
 
 Lookup precedence (first non-empty wins): env var → `settings.local.json` → `settings.json` → built-in default. An unset env var, or one set to the empty string, falls through to the file lookup.
 

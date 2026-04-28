@@ -12,8 +12,8 @@ set -euo pipefail
 #
 # Lookup precedence (first non-empty wins):
 #   1. Environment variable CODE_GUARDIAN_<KEY> (dotted key uppercased, dots
-#      replaced with underscores; e.g. "stop_hook.base_branch" ->
-#      CODE_GUARDIAN_STOP_HOOK_BASE_BRANCH).
+#      replaced with double underscores so the section boundary is recoverable;
+#      e.g. "stop_hook.base_branch" -> CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH).
 #   2. The .local.json sibling of the config file (e.g. settings.local.json).
 #   3. The config file itself.
 #   4. The provided default.
@@ -31,9 +31,9 @@ read_json_config() {
     local default="$3"
     local val
 
-    # Env-var override: CODE_GUARDIAN_<KEY_WITH_DOTS_AS_UNDERSCORES>
+    # Env-var override: CODE_GUARDIAN_<KEY uppercased, dots -> __>
     local env_var
-    env_var="CODE_GUARDIAN_$(echo "$key" | tr '[:lower:].' '[:upper:]_')"
+    env_var="CODE_GUARDIAN_$(echo "$key" | tr '[:lower:]' '[:upper:]' | sed 's/\./__/g')"
     if [ -n "${!env_var:-}" ]; then
         echo "${!env_var}"
         return
