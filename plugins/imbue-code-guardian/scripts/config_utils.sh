@@ -11,9 +11,9 @@ set -euo pipefail
 #   val=$(read_json_config "path/to/config.json" "nested.key" "default_value")
 #
 # Lookup precedence (first non-empty wins):
-#   1. Environment variable IMBUE_REVIEWER_<KEY> (dotted key uppercased, dots
+#   1. Environment variable CODE_GUARDIAN_<KEY> (dotted key uppercased, dots
 #      replaced with underscores; e.g. "stop_hook.base_branch" ->
-#      IMBUE_REVIEWER_STOP_HOOK_BASE_BRANCH).
+#      CODE_GUARDIAN_STOP_HOOK_BASE_BRANCH).
 #   2. The .local.json sibling of the config file (e.g. settings.local.json).
 #   3. The config file itself.
 #   4. The provided default.
@@ -31,9 +31,9 @@ read_json_config() {
     local default="$3"
     local val
 
-    # Env-var override: IMBUE_REVIEWER_<KEY_WITH_DOTS_AS_UNDERSCORES>
+    # Env-var override: CODE_GUARDIAN_<KEY_WITH_DOTS_AS_UNDERSCORES>
     local env_var
-    env_var="IMBUE_REVIEWER_$(echo "$key" | tr '[:lower:].' '[:upper:]_')"
+    env_var="CODE_GUARDIAN_$(echo "$key" | tr '[:lower:].' '[:upper:]_')"
     if [ -n "${!env_var:-}" ]; then
         echo "${!env_var}"
         return
