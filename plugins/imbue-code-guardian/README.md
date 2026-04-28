@@ -31,13 +31,14 @@ Individual gates can be disabled with `/imbue-code-guardian:reviewer-disable`.
 When enabled, the stop hook orchestrator runs every time Claude finishes a response. The full pipeline:
 
 1. **Stuck agent detection** -- if the hook has blocked N consecutive times at the same commit, let the agent through to prevent infinite loops.
-2. **Fetch/merge base branch** -- enforces all changes are committed (or gitignored), then fetches all remotes, merges the base branch, and pushes merge commits. Gated by `stop_hook.fetch_and_merge`.
-3. **PR check** -- verifies a PR exists (so CI starts early). If no PR exists and `ci.require_pr` is true, blocks the agent to create one.
-4. **Informational session detection** -- if only `.md` files changed (or no changes vs base), the session is informational and the hook passes without further checks.
-5. **Parallel gate checks** -- all remaining gates are checked in parallel:
+2. **Uncommitted changes check** -- all changes must be committed (or gitignored) before the hook passes.
+3. **Fetch and merge base branch** -- fetches all remotes, merges the base branch, and pushes merge commits.
+4. **Push + PR check** -- pushes to origin and verifies a PR exists (so CI starts early). If no PR exists and `ci.require_pr` is true, blocks the agent to create one.
+5. **Informational session detection** -- if only `.md` files changed (or no changes vs base), the session is informational and the hook passes without further checks.
+6. **Parallel gate checks** -- all remaining gates are checked in parallel:
    - **Review gates**: autofix (per-commit), architecture verification (per-branch), conversation review (per-commit)
    - **CI gate**: polls PR check status until all checks complete
-6. **Unified report** -- all unsatisfied gates are reported together so the agent knows everything it still needs to do.
+7. **Unified report** -- all unsatisfied gates are reported together so the agent knows everything it still needs to do.
 
 ## Skills
 
@@ -76,7 +77,8 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 |-----|------|---------|-------------|
 | `stop_hook.enabled_when` | string | `""` | Shell expression; hook runs only when this exits 0. Empty = disabled. |
 | `stop_hook.base_branch` | string | `"main"` | Base branch for merge/diff operations. |
-| `stop_hook.fetch_and_merge` | bool | `true` | Fetch/merge/push base branch on each stop (also enforces no uncommitted changes, since git can't merge/push a dirty tree). |
+| `stop_hook.require_committed` | bool | `true` | Enforce all changes committed before hook passes. |
+| `stop_hook.fetch_and_merge` | bool | `true` | Fetch/merge/push base branch on each stop. |
 | `stop_hook.skip_informational` | bool | `true` | Skip checks for .md-only sessions. |
 | `stop_hook.log_file` | string | `".reviewer/logs/stop_hook.jsonl"` | JSONL log file path. |
 | `stop_hook.max_consecutive_blocks` | int | `3` | Safety hatch: let agent through after this many consecutive blocks at the same commit. |

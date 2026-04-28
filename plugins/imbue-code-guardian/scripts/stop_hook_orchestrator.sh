@@ -6,11 +6,12 @@
 #
 #   1. Check enabled_when condition
 #   2. Stuck agent detection (safety hatch)
-#   3. Fetch/merge base branch (includes uncommitted-changes enforcement)
-#   4. Ensure a PR exists (so CI starts early)
-#   5. Informational session detection (skip if .md-only changes)
-#   6. Check all gates in parallel (review gates + CI polling)
-#   7. Report all unsatisfied gates together
+#   3. Uncommitted changes enforcement
+#   4. Fetch and merge base branch
+#   5. Push to origin + ensure PR exists (so CI starts early)
+#   6. Informational session detection (skip if .md-only changes)
+#   7. Check all gates in parallel (review gates + CI polling)
+#   8. Report all unsatisfied gates together
 #
 # All configuration is read from .reviewer/settings.json (with
 # .reviewer/settings.local.json overrides). No environment variable
@@ -85,8 +86,7 @@ trap '
 ' EXIT
 
 # =========================================================================
-# Step 2: Stuck agent detection (must be before the fetch/merge step so
-# agents that can't commit -- e.g. broken permissions -- don't loop forever)
+# Step 2: Stuck agent detection (must be before uncommitted check)
 # =========================================================================
 MAX_CONSECUTIVE_BLOCKS=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.max_consecutive_blocks" "3")
 
@@ -112,14 +112,11 @@ if [[ $CONSECUTIVE_BLOCKS -ge $MAX_CONSECUTIVE_BLOCKS ]]; then
 fi
 
 # =========================================================================
-# Step 3: Fetch/merge base branch (includes uncommitted-changes enforcement,
-# since git fetch/merge/push can't proceed cleanly with a dirty tree)
+# Step 3: Uncommitted changes enforcement
 # =========================================================================
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
-FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_merge" "true")
+REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_committed" "true")
 
-if [[ "$FETCH_AND_MERGE" == "true" ]]; then
+if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
     untracked=$(git ls-files --others --exclude-standard)
     staged=$(git diff --cached --name-only)
     unstaged=$(git diff --name-only)
@@ -148,7 +145,16 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
         _log_to_file "ERROR" "Uncommitted changes detected, exiting with 2"
         exit 2
     fi
+fi
 
+# =========================================================================
+# Step 4: Fetch and merge base branch
+# =========================================================================
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
+FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_merge" "true")
+
+if [[ "$FETCH_AND_MERGE" == "true" ]]; then
     _log_to_file "INFO" "Fetching all remotes (base_branch=$BASE_BRANCH)"
     log_info "Fetching all remotes..."
     git fetch --all
@@ -194,7 +200,7 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 4: Ensure PR exists (so CI starts early)
+# Step 5: Push + ensure PR exists (CI starts early)
 # =========================================================================
 CI_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "ci.is_enabled" "true")
 PR_NUMBER=""
@@ -212,7 +218,7 @@ if [[ "$CI_ENABLED" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 5: Informational session detection
+# Step 6: Informational session detection
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
@@ -243,7 +249,7 @@ if [[ "$IS_INFORMATIONAL_ONLY" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 6: Check all gates in parallel (review gates + CI)
+# Step 7: Check all gates in parallel (review gates + CI)
 # =========================================================================
 _log_to_file "INFO" "Starting parallel gate checks..."
 
@@ -281,7 +287,7 @@ if [[ -n "$CI_PID" ]]; then
 fi
 
 # =========================================================================
-# Step 7: Report results
+# Step 8: Report results
 # =========================================================================
 if [[ $GATES_EXIT -ne 0 ]] || [[ $CI_EXIT -ne 0 ]]; then
     _log_to_file "INFO" "Gates or CI failed (gates=$GATES_EXIT, ci=$CI_EXIT)"
