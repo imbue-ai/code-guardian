@@ -91,6 +91,7 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 | `ci.require_pr` | bool | `true` | If true, block when no PR exists. If false, skip CI when no PR. |
 | `ci.timeout` | int | `600` | Max seconds for CI polling. |
 | `ci.poll_interval` | int | `15` | Seconds between CI polls. |
+| `ci.block_when_unreachable` | bool | `false` | If true, hard-fail when the gh API is unreachable / rate-limited. If false (default), skip PR/CI gating and let local gates still run. See "Degraded mode" below. |
 
 #### Review gates
 
@@ -102,6 +103,19 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 | `verify_conversation.append_to_prompt` | string | `""` | Extra instructions appended to verify-conversation skill invocation. |
 | `verify_architecture.is_enabled` | bool | `true` | Enable architecture verification gate (per-branch). |
 | `verify_architecture.append_to_prompt` | string | `""` | Extra instructions appended to verify-architecture skill invocation. |
+
+## Degraded mode
+
+The orchestrator runs a single preflight against `gh api rate_limit` before any other gh-API calls. If the call fails (network unreachable) or `resources.graphql.remaining` is `0`, the run is marked degraded:
+
+- Step 5 (ensure-PR) is skipped — no PR existence check, no PR-number written.
+- Step 7's CI polling half is skipped (no PR number).
+- Local gates (autofix, verify-architecture, verify-conversation) still run and still gate the stop on their own merits.
+- Git transport (Step 4 fetch/push) is unchanged — it's a separate service from the gh API.
+- The orchestrator exits 0 if local gates pass, with a `WARNING` line in `.reviewer/logs/stop_hook.jsonl` recording the reason. The stuck-agent block-counter is not incremented.
+- No stderr message is shown to the agent; the degraded state is intentionally invisible to the model so it doesn't try to "fix" GitHub.
+
+Set `ci.block_when_unreachable=true` to opt out and hard-fail instead.
 
 ## Stuck agent detection
 

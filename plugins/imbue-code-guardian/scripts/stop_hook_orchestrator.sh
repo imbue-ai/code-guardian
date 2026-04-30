@@ -148,6 +148,30 @@ if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
 fi
 
 # =========================================================================
+# Step 3.5: GitHub gh-API reachability preflight
+#
+# Probes the gh API once. If unreachable or graphql.remaining == 0, mark the
+# run as degraded and skip the gh-API steps (Step 5 ensure-PR, Step 7 CI
+# polling) so local gates can still run. Step 4 git transport is left
+# unchanged -- it's a separate service from the gh API.
+# =========================================================================
+CI_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "ci.is_enabled" "true")
+BLOCK_WHEN_UNREACHABLE=$(read_json_config "$REVIEWER_SETTINGS" "ci.block_when_unreachable" "false")
+GH_DEGRADED=false
+
+if [[ "$CI_ENABLED" == "true" ]]; then
+    if ! check_github_reachable; then
+        GH_DEGRADED=true
+        _log_to_file "WARNING" "gh-API preflight failed: $GH_DEGRADED_REASON"
+        if [[ "$BLOCK_WHEN_UNREACHABLE" == "true" ]]; then
+            log_error "GitHub gh-API is unreachable or rate-limited ($GH_DEGRADED_REASON)."
+            log_error "Set ci.block_when_unreachable=false to allow degraded mode (skip PR/CI gating)."
+            exit 2
+        fi
+    fi
+fi
+
+# =========================================================================
 # Step 4: Fetch and merge base branch
 # =========================================================================
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -201,11 +225,14 @@ fi
 
 # =========================================================================
 # Step 5: Push + ensure PR exists (CI starts early)
+#
+# Skipped when degraded -- ensure-pr makes graphql calls that would fail or
+# return false negatives. Gates downstream still run; CI polling in Step 7
+# is naturally skipped because PR_NUMBER stays empty.
 # =========================================================================
-CI_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "ci.is_enabled" "true")
 PR_NUMBER=""
 
-if [[ "$CI_ENABLED" == "true" ]]; then
+if [[ "$CI_ENABLED" == "true" ]] && [[ "$GH_DEGRADED" != "true" ]]; then
     _log_to_file "INFO" "Checking PR existence..."
     if "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" ensure-pr; then
         PR_NUMBER=$(cat .reviewer/outputs/pr_number 2>/dev/null || echo "")
@@ -215,6 +242,8 @@ if [[ "$CI_ENABLED" == "true" ]]; then
         _log_to_file "INFO" "PR check failed (exit=$PR_CI_EXIT)"
         exit "$PR_CI_EXIT"
     fi
+elif [[ "$GH_DEGRADED" == "true" ]]; then
+    _log_to_file "INFO" "Skipping ensure-pr because gh-API is degraded ($GH_DEGRADED_REASON)"
 fi
 
 # =========================================================================

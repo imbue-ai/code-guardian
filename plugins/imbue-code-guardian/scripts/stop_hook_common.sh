@@ -118,6 +118,41 @@ log_debug() {
 }
 
 # ---------------------------------------------------------------------------
+# GitHub gh-API reachability preflight
+#
+# Probes `gh api rate_limit` and inspects the GraphQL bucket. Returns:
+#   0  -- gh API is reachable AND graphql.remaining > 0
+#   1  -- gh API is unreachable, returned an unparseable response, or graphql
+#         bucket is exhausted; sets GH_DEGRADED_REASON for logging
+#
+# Scope: this is purely about the gh-API surface (REST + GraphQL via
+# api.github.com). Git transport (github.com via HTTPS / SSH) is a separate
+# service and is not probed here -- GraphQL can be rate-limited or down while
+# git transport works fine.
+# ---------------------------------------------------------------------------
+GH_DEGRADED_REASON=""
+
+check_github_reachable() {
+    GH_DEGRADED_REASON=""
+    local rate_json remaining reset_at
+    if ! rate_json=$(gh api rate_limit 2>/dev/null); then
+        GH_DEGRADED_REASON="gh_api_unreachable"
+        return 1
+    fi
+    remaining=$(echo "$rate_json" | jq -r '.resources.graphql.remaining // empty' 2>/dev/null)
+    if [[ -z "$remaining" ]] || ! [[ "$remaining" =~ ^-?[0-9]+$ ]]; then
+        GH_DEGRADED_REASON="rate_limit_response_unparseable"
+        return 1
+    fi
+    if [[ "$remaining" -le 0 ]]; then
+        reset_at=$(echo "$rate_json" | jq -r '.resources.graphql.reset // 0' 2>/dev/null)
+        GH_DEGRADED_REASON="graphql_rate_limited:reset_at=$reset_at"
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # Retry a command with exponential backoff
 # Usage: retry_command <max_retries> <command...>
 # ---------------------------------------------------------------------------
