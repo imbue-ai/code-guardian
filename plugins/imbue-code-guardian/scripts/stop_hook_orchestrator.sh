@@ -5,13 +5,15 @@
 # Main stop hook orchestrator for code-guardian. Runs the full pipeline:
 #
 #   1. Check enabled_when condition
-#   2. Stuck agent detection (safety hatch)
-#   3. Uncommitted changes enforcement
-#   4. Fetch and merge base branch
-#   5. Push to origin + ensure PR exists (so CI starts early)
-#   6. Informational session detection (skip if .md-only changes)
-#   7. Check all gates in parallel (review gates + CI polling)
-#   8. Report all unsatisfied gates together
+#   2. Read-only turn skip (exit early if no code-affecting tools used)
+#   3. Stuck agent detection (safety hatch)
+#   4. Uncommitted changes enforcement
+#   5. Fetch and merge base branch
+#   6. Push to origin + ensure PR exists (so CI starts early)
+#   7. Informational session detection (skip if .md-only changes)
+#   8. Run review gates synchronously; surface any prior-turn CI failure;
+#      fire-and-forget a fresh CI poll in the background for the next turn
+#   9. Report all unsatisfied gates together
 #
 # All configuration is read from .reviewer/settings.json (with
 # .reviewer/settings.local.json overrides). No environment variable
@@ -24,8 +26,12 @@
 
 set -euo pipefail
 
-# Drain stdin so downstream commands don't accidentally consume the hook JSON
-cat > /dev/null 2>&1 || true
+# Capture the hook JSON from stdin so we can extract transcript_path. Drain
+# any remainder so downstream commands don't accidentally consume it.
+HOOK_INPUT=""
+if [[ ! -t 0 ]]; then
+    HOOK_INPUT=$(cat 2>/dev/null || true)
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -56,6 +62,40 @@ source "$SCRIPT_DIR/stop_hook_common.sh"
 _log_to_file "INFO" "========================================================"
 _log_to_file "INFO" "Stop hook orchestrator started (pid=$$, ppid=$PPID)"
 _log_to_file "INFO" "========================================================"
+
+# =========================================================================
+# Read-only turn skip
+# =========================================================================
+# If the assistant only used read-only tools (Read/Glob/Grep/LS) since the
+# last human user turn, the turn produced no code-affecting work. Skip the
+# whole pipeline -- no fetch, no push, no PR ops, no gates, no CI poll.
+SKIP_READONLY=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_readonly_turns" "true")
+
+_extract_transcript_path() {
+    [[ -z "$HOOK_INPUT" ]] && return
+    if command -v jq >/dev/null 2>&1; then
+        echo "$HOOK_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null
+        return
+    fi
+    # Fallback: simple regex extraction. Handles the typical
+    # {"transcript_path":"..."} shape with no embedded escaped quotes.
+    echo "$HOOK_INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+if [[ "$SKIP_READONLY" == "true" ]]; then
+    TRANSCRIPT_PATH=$(_extract_transcript_path)
+    if [[ -n "$TRANSCRIPT_PATH" ]] && [[ -f "$TRANSCRIPT_PATH" ]]; then
+        if TOOLS_USED=$(python3 "$SCRIPT_DIR/detect_tools_used.py" "$TRANSCRIPT_PATH" 2>/dev/null); then
+            # Anything not in the read-only allowlist is "substantive"
+            SUBSTANTIVE=$(echo "$TOOLS_USED" | grep -vxE 'Read|Glob|Grep|LS' || true)
+            if [[ -z "$SUBSTANTIVE" ]]; then
+                tool_summary=$(echo "$TOOLS_USED" | tr '\n' ',' | sed 's/,$//')
+                _log_to_file "INFO" "Read-only turn (tools=${tool_summary:-none}); skipping all gates"
+                exit 0
+            fi
+        fi
+    fi
+fi
 
 # Trap signals so we can log unexpected terminations
 _on_signal() {
@@ -249,11 +289,17 @@ if [[ "$IS_INFORMATIONAL_ONLY" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 7: Check all gates in parallel (review gates + CI)
+# Step 7: Run review gates synchronously; handle CI asynchronously
+#
+# CI handling is fire-and-forget: blocking the agent's tmux slot for up to
+# ci.timeout (default 600s) waiting on CI turns 30s iterations into 10min
+# ones. Instead, surface the *previous* turn's CI result for the current
+# commit (if any) and kick off a fresh background poll whose result the
+# *next* turn will surface. The poll is detached via nohup + disown +
+# stdio redirection so it survives the orchestrator exiting.
 # =========================================================================
-_log_to_file "INFO" "Starting parallel gate checks..."
+_log_to_file "INFO" "Starting gate checks..."
 
-# Temporary files for capturing output from parallel processes
 GATE_STDERR=$(mktemp)
 CI_STDERR=$(mktemp)
 _cleanup_temp() {
@@ -261,48 +307,81 @@ _cleanup_temp() {
 }
 
 GATES_EXIT=0
-CI_EXIT=0
+CI_REPORT_FAILURE=false
 
-# Launch review gates
-"$SCRIPT_DIR/stop_hook_gates.sh" "$HASH" 2>"$GATE_STDERR" &
-GATES_PID=$!
-_log_to_file "INFO" "Launched stop_hook_gates.sh (pid=$GATES_PID)"
-
-# Launch CI polling if enabled and PR exists
-CI_PID=""
-if [[ "$CI_ENABLED" == "true" ]] && [[ -n "$PR_NUMBER" ]]; then
-    "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" poll-ci "$PR_NUMBER" 2>"$CI_STDERR" &
-    CI_PID=$!
-    _log_to_file "INFO" "Launched CI polling (pid=$CI_PID, pr=$PR_NUMBER)"
-fi
-
-# Wait for review gates
-wait "$GATES_PID" || GATES_EXIT=$?
+# Run review gates (foreground). `|| true` so the non-zero exit doesn't trip
+# `set -e`; we capture the real status via $? immediately.
+"$SCRIPT_DIR/stop_hook_gates.sh" "$HASH" 2>"$GATE_STDERR" || GATES_EXIT=$?
 _log_to_file "INFO" "Gates process exited with code $GATES_EXIT"
 
-# If gates failed, short-circuit: terminate CI polling and report immediately.
-# Otherwise the agent is forced to wait out the full CI poll timeout (up to
-# ci.timeout seconds, default 600) before learning that a gate failed in the
-# first 0.5s -- even though CI results don't change what they need to do next.
-if [[ -n "$CI_PID" ]] && [[ $GATES_EXIT -ne 0 ]]; then
-    _log_to_file "INFO" "Gates failed; terminating CI poll early (pid=$CI_PID)"
-    pkill -TERM -P "$CI_PID" 2>/dev/null || true
-    kill -TERM "$CI_PID" 2>/dev/null || true
-    wait "$CI_PID" 2>/dev/null || true
-    CI_PID=""
-fi
+# CI handling -- check the prior poll's outcome for the current SHA, then
+# fire and forget a new poll if needed.
+if [[ "$CI_ENABLED" == "true" ]] && [[ -n "$PR_NUMBER" ]]; then
+    PRIOR_PID_FILE=".reviewer/outputs/pr_status_pid"
+    PRIOR_SHA_FILE=".reviewer/outputs/pr_status_sha"
+    PRIOR_STATUS_FILE=".reviewer/outputs/pr_status"
 
-# Wait for CI if still running
-if [[ -n "$CI_PID" ]]; then
-    wait "$CI_PID" || CI_EXIT=$?
-    _log_to_file "INFO" "CI process exited with code $CI_EXIT"
+    PRIOR_PID=$(cat "$PRIOR_PID_FILE" 2>/dev/null || true)
+    PRIOR_SHA=$(cat "$PRIOR_SHA_FILE" 2>/dev/null || true)
+    PRIOR_STATUS=$(cat "$PRIOR_STATUS_FILE" 2>/dev/null || true)
+
+    POLL_RUNNING=false
+    if [[ -n "$PRIOR_PID" ]] && kill -0 "$PRIOR_PID" 2>/dev/null; then
+        POLL_RUNNING=true
+    fi
+
+    POLL_NEEDED=true
+    if [[ "$PRIOR_SHA" == "$HASH" ]]; then
+        if [[ "$PRIOR_STATUS" == "failure" ]]; then
+            CI_REPORT_FAILURE=true
+            POLL_NEEDED=false
+            _log_to_file "INFO" "Surfacing prior CI failure for current commit ($HASH)"
+            {
+                echo "ERROR: CI tests have failed for the PR (reported by the previous turn's background poll)."
+                echo "ERROR: Use the gh tool to inspect the remote test results for this branch and see what failed."
+                echo "ERROR: Note that you MUST identify the issue and fix it locally before trying again!"
+                echo "ERROR: NEVER just re-trigger the pipeline!"
+                echo "ERROR: NEVER fix timeouts by increasing them! Instead, make things faster or increase parallelism."
+                echo "ERROR: If it is impossible to fix the test, tell the user and say that you failed."
+                echo "ERROR: Otherwise, once you have understood and fixed the issue, you can simply commit to try again."
+            } > "$CI_STDERR"
+        elif [[ "$PRIOR_STATUS" == "success" ]]; then
+            POLL_NEEDED=false
+            _log_to_file "INFO" "Prior CI poll already passed for $HASH; not re-polling"
+        elif [[ "$POLL_RUNNING" == "true" ]]; then
+            POLL_NEEDED=false
+            _log_to_file "INFO" "CI poll already running for $HASH (pid=$PRIOR_PID)"
+        fi
+    else
+        if [[ "$POLL_RUNNING" == "true" ]]; then
+            _log_to_file "INFO" "HEAD changed ($PRIOR_SHA -> $HASH); terminating stale CI poll (pid=$PRIOR_PID)"
+            kill -TERM "$PRIOR_PID" 2>/dev/null || true
+        fi
+    fi
+
+    if [[ "$POLL_NEEDED" == "true" ]]; then
+        mkdir -p .reviewer/outputs 2>/dev/null || true
+        echo "$HASH" > "$PRIOR_SHA_FILE"
+        echo "pending" > "$PRIOR_STATUS_FILE"
+        # Detach the poll: nohup ignores SIGHUP, the redirects untether stdio
+        # from the orchestrator, and `disown` removes the job from bash's
+        # table so it survives the orchestrator's exit. Plain `& $!` gives a
+        # reliable PID (unlike `setsid`, which forks if the caller is a
+        # process group leader and yields the wrong $!).
+        nohup bash "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" poll-ci "$PR_NUMBER" \
+            </dev/null >/dev/null 2>&1 &
+        POLL_BG_PID=$!
+        echo "$POLL_BG_PID" > "$PRIOR_PID_FILE"
+        disown "$POLL_BG_PID" 2>/dev/null || true
+        _log_to_file "INFO" "Launched detached CI poll (pid=$POLL_BG_PID, pr=$PR_NUMBER, sha=$HASH)"
+    fi
 fi
 
 # =========================================================================
 # Step 8: Report results
 # =========================================================================
-if [[ $GATES_EXIT -ne 0 ]] || [[ $CI_EXIT -ne 0 ]]; then
-    _log_to_file "INFO" "Gates or CI failed (gates=$GATES_EXIT, ci=$CI_EXIT)"
+if [[ $GATES_EXIT -ne 0 ]] || [[ "$CI_REPORT_FAILURE" == "true" ]]; then
+    _log_to_file "INFO" "Gates or CI failed (gates=$GATES_EXIT, ci_report_failure=$CI_REPORT_FAILURE)"
 
     # Relay gate errors to stderr (these contain the missing gates report)
     if [[ $GATES_EXIT -ne 0 ]] && [[ -s "$GATE_STDERR" ]]; then
@@ -310,7 +389,7 @@ if [[ $GATES_EXIT -ne 0 ]] || [[ $CI_EXIT -ne 0 ]]; then
     fi
 
     # Relay CI errors to stderr
-    if [[ $CI_EXIT -ne 0 ]] && [[ -s "$CI_STDERR" ]]; then
+    if [[ "$CI_REPORT_FAILURE" == "true" ]] && [[ -s "$CI_STDERR" ]]; then
         # Add separator if both failed
         if [[ $GATES_EXIT -ne 0 ]]; then
             echo "" >&2
