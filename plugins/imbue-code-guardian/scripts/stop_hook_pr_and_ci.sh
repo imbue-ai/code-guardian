@@ -88,8 +88,10 @@ _ensure_pr() {
         log_info "Wrote PR URL to .reviewer/outputs/pr_url: $pr_url"
     fi
 
-    # Initialize status as pending
-    echo "pending" > .reviewer/outputs/pr_status
+    # Note: pr_status is *not* initialized here. The orchestrator now runs CI
+    # asynchronously across turns, so the prior turn's pr_status (success /
+    # failure / pending) must persist through ensure-pr until the orchestrator
+    # decides whether to launch a fresh poll.
 
     _log_to_file "INFO" "ensure-pr completed (pr=$existing_pr)"
 }
@@ -108,7 +110,19 @@ _poll_ci() {
     ci_timeout=$(read_json_config "$REVIEWER_SETTINGS" "ci.timeout" "600")
     ci_interval=$(read_json_config "$REVIEWER_SETTINGS" "ci.poll_interval" "15")
 
-    _log_to_file "INFO" "poll-ci started (pr=$pr_number, timeout=$ci_timeout, interval=$ci_interval)"
+    _log_to_file "INFO" "poll-ci started (pr=$pr_number, timeout=$ci_timeout, interval=$ci_interval, pid=$$)"
+
+    # When invoked detached by the orchestrator, the orchestrator records our
+    # PID in pr_status_pid so the next turn can detect a still-running poll.
+    # Clear that marker on exit so a stale PID never lingers (we only clear
+    # if it still matches our PID, to avoid clobbering a freshly-launched
+    # successor poll).
+    trap '
+        if [[ -f .reviewer/outputs/pr_status_pid ]] && \
+           [[ "$(cat .reviewer/outputs/pr_status_pid 2>/dev/null)" == "$$" ]]; then
+            rm -f .reviewer/outputs/pr_status_pid
+        fi
+    ' EXIT
 
     log_info "Polling for PR #$pr_number check results..."
     if RESULT=$("$SCRIPT_DIR/poll_pr_checks.sh" --timeout "$ci_timeout" --interval "$ci_interval" "$pr_number"); then
