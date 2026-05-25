@@ -8,7 +8,7 @@
 #   2. Stuck agent detection (safety hatch)
 #   3. Uncommitted changes enforcement
 #   4. Fetch and merge base branch
-#   5. Informational session detection (skip if base branch / .md-only changes)
+#   5. Gate-skip detection (base branch / no changes vs base / .md-only)
 #   6. Push to origin + ensure PR exists (so CI starts early)
 #   7. Check all gates in parallel (review gates + CI polling)
 #   8. Report all unsatisfied gates together
@@ -200,12 +200,14 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 5: Informational session detection (before PR enforcement)
+# Step 5: Gate-skip detection -- sessions that need no PR (before enforcement)
 #
-# Evaluated before ensure-pr so that base-branch / no-diff / .md-only
-# sessions exit cleanly instead of tripping the "no PR found" gate in
-# Step 6. (Previously this ran after ensure-pr, so a stop on the base
-# branch hit the PR requirement and exited 2 before this skip could fire.)
+# Three cases skip the PR + review gates entirely: we're on the base
+# branch, there is no diff vs the base branch yet, or only .md files
+# changed. Evaluated before ensure-pr so these sessions exit cleanly
+# instead of tripping the "no PR found" gate in Step 6. (Previously this
+# ran after ensure-pr, so a stop on the base branch hit the PR
+# requirement and exited 2 before this skip could fire.)
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
