@@ -33,7 +33,7 @@ When enabled, the stop hook orchestrator runs every time Claude finishes a respo
 1. **Stuck agent detection** -- if the hook has blocked N consecutive times at the same commit, let the agent through to prevent infinite loops.
 2. **Uncommitted changes check** -- all changes must be committed (or gitignored) before the hook passes.
 3. **Fetch and merge base branch** -- fetches all remotes, merges the base branch, and pushes merge commits.
-4. **Gate-skip detection** -- if we're on the base branch, there are no changes vs base, or only `.md` files changed, the hook passes without further checks.
+4. **Gate-skip detection** -- if we're on the base branch, or there are no non-`.md` changes vs base, the hook passes without further checks.
 5. **Push + PR check** -- pushes to origin and verifies a PR exists (so CI starts early). If no PR exists and `ci.require_pr` is true, blocks the agent to create one.
 6. **Parallel gate checks** -- all remaining gates are checked in parallel:
    - **Review gates**: autofix (per-commit), architecture verification (per-branch), conversation review (per-commit)
@@ -79,7 +79,7 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 | `stop_hook.base_branch` | string | `"main"` | Base branch for merge/diff operations. |
 | `stop_hook.require_committed` | bool | `true` | Enforce all changes committed before hook passes. |
 | `stop_hook.fetch_and_merge` | bool | `true` | Fetch/merge/push base branch on each stop. |
-| `stop_hook.skip_informational` | bool | `true` | Skip checks when there are no changes vs base, or when only .md files changed. |
+| `stop_hook.skip_informational` | bool | `true` | Skip checks when there are no non-.md changes vs base. |
 | `stop_hook.log_file` | string | `".reviewer/logs/stop_hook.jsonl"` | JSONL log file path. |
 | `stop_hook.max_consecutive_blocks` | int | `3` | Safety hatch: let agent through after this many consecutive blocks at the same commit. |
 

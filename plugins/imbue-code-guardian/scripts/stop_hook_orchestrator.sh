@@ -8,7 +8,7 @@
 #   2. Stuck agent detection (safety hatch)
 #   3. Uncommitted changes enforcement
 #   4. Fetch and merge base branch
-#   5. Gate-skip detection (base branch / no changes vs base / .md-only)
+#   5. Gate-skip detection (base branch / no non-.md changes vs base)
 #   6. Push to origin + ensure PR exists (so CI starts early)
 #   7. Check all gates in parallel (review gates + CI polling)
 #   8. Report all unsatisfied gates together
@@ -202,10 +202,9 @@ fi
 # =========================================================================
 # Step 5: Gate-skip detection -- sessions that need no PR
 #
-# Three cases skip the PR + review gates entirely: on the base branch,
-# no diff vs the base branch yet, or only .md files changed. Evaluated
-# before ensure-pr (Step 6) so these sessions exit cleanly instead of
-# tripping its "no PR found" gate.
+# Two cases skip the PR + review gates entirely: on the base branch, or
+# no non-.md changes vs it. Evaluated before ensure-pr (Step 6) so these
+# sessions exit cleanly instead of tripping its "no PR found" gate.
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
@@ -215,17 +214,14 @@ if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
         log_info "Currently on base branch ($BASE_BRANCH) -- no PR needed"
         IS_INFORMATIONAL_ONLY=true
     else
-        # Use origin/$BASE_BRANCH since we just fetched
+        # An empty diff trivially has no non-.md files, so this single
+        # test covers both "nothing changed yet" and "docs-only".
+        # origin/$BASE_BRANCH is current because Step 4 just fetched it.
         CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
-        if [[ -z "$CHANGED_FILES" ]]; then
-            log_info "No files changed compared to $BASE_BRANCH -- informational session"
+        NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
+        if [[ -z "$NON_MD_FILES" ]]; then
+            log_info "No non-.md changes vs $BASE_BRANCH -- skipping review/PR gates"
             IS_INFORMATIONAL_ONLY=true
-        else
-            NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
-            if [[ -z "$NON_MD_FILES" ]]; then
-                log_info "Only .md files changed compared to $BASE_BRANCH -- informational session"
-                IS_INFORMATIONAL_ONLY=true
-            fi
         fi
     fi
 fi
