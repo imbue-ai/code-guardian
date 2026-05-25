@@ -8,8 +8,8 @@
 #   2. Stuck agent detection (safety hatch)
 #   3. Uncommitted changes enforcement
 #   4. Fetch and merge base branch
-#   5. Push to origin + ensure PR exists (so CI starts early)
-#   6. Informational session detection (skip if .md-only changes)
+#   5. Informational session detection (skip if base branch / .md-only changes)
+#   6. Push to origin + ensure PR exists (so CI starts early)
 #   7. Check all gates in parallel (review gates + CI polling)
 #   8. Report all unsatisfied gates together
 #
@@ -200,25 +200,12 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 5: Push + ensure PR exists (CI starts early)
-# =========================================================================
-CI_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "ci.is_enabled" "true")
-PR_NUMBER=""
-
-if [[ "$CI_ENABLED" == "true" ]]; then
-    _log_to_file "INFO" "Checking PR existence..."
-    if "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" ensure-pr; then
-        PR_NUMBER=$(cat .reviewer/outputs/pr_number 2>/dev/null || echo "")
-        _log_to_file "INFO" "PR check passed (pr_number=$PR_NUMBER)"
-    else
-        PR_CI_EXIT=$?
-        _log_to_file "INFO" "PR check failed (exit=$PR_CI_EXIT)"
-        exit "$PR_CI_EXIT"
-    fi
-fi
-
-# =========================================================================
-# Step 6: Informational session detection
+# Step 5: Informational session detection (before PR enforcement)
+#
+# Evaluated before ensure-pr so that base-branch / no-diff / .md-only
+# sessions exit cleanly instead of tripping the "no PR found" gate in
+# Step 6. (Previously this ran after ensure-pr, so a stop on the base
+# branch hit the PR requirement and exited 2 before this skip could fire.)
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
@@ -246,6 +233,24 @@ fi
 if [[ "$IS_INFORMATIONAL_ONLY" == "true" ]]; then
     _log_to_file "INFO" "Informational-only session, exiting cleanly (exit 0)"
     exit 0
+fi
+
+# =========================================================================
+# Step 6: Push + ensure PR exists (CI starts early)
+# =========================================================================
+CI_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "ci.is_enabled" "true")
+PR_NUMBER=""
+
+if [[ "$CI_ENABLED" == "true" ]]; then
+    _log_to_file "INFO" "Checking PR existence..."
+    if "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" ensure-pr; then
+        PR_NUMBER=$(cat .reviewer/outputs/pr_number 2>/dev/null || echo "")
+        _log_to_file "INFO" "PR check passed (pr_number=$PR_NUMBER)"
+    else
+        PR_CI_EXIT=$?
+        _log_to_file "INFO" "PR check failed (exit=$PR_CI_EXIT)"
+        exit "$PR_CI_EXIT"
+    fi
 fi
 
 # =========================================================================
