@@ -79,7 +79,7 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 | `stop_hook.base_branch` | string | `"main"` | Base branch for merge/diff operations. |
 | `stop_hook.require_committed` | bool | `true` | Enforce all changes committed before hook passes. |
 | `stop_hook.fetch_and_merge` | bool | `true` | Fetch/merge/push base branch on each stop. |
-| `stop_hook.skip_informational` | bool | `true` | Skip checks when on the base branch, when there are no changes vs base, or when only .md files changed. |
+| `stop_hook.skip_informational` | bool | `true` | Skip checks when there are no changes vs base, or when only .md files changed. |
 | `stop_hook.log_file` | string | `".reviewer/logs/stop_hook.jsonl"` | JSONL log file path. |
 | `stop_hook.max_consecutive_blocks` | int | `3` | Safety hatch: let agent through after this many consecutive blocks at the same commit. |
 
