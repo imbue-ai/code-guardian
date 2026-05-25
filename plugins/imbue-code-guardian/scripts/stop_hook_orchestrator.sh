@@ -8,7 +8,7 @@
 #   2. Stuck agent detection (safety hatch)
 #   3. Uncommitted changes enforcement
 #   4. Fetch and merge base branch
-#   5. Gate-skip detection (base branch / no non-.md changes vs base)
+#   5. Gate-skip detection (no non-.md changes vs base)
 #   6. Push to origin + ensure PR exists (so CI starts early)
 #   7. Check all gates in parallel (review gates + CI polling)
 #   8. Report all unsatisfied gates together
