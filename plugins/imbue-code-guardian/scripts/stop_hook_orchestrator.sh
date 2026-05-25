@@ -8,7 +8,7 @@
 #   2. Stuck agent detection (safety hatch)
 #   3. Uncommitted changes enforcement
 #   4. Fetch and merge base branch
-#   5. Gate-skip detection (no non-.md changes vs base)
+#   5. Docs-only / empty-diff detection
 #   6. Push to origin + ensure PR exists (so CI starts early)
 #   7. Check all gates in parallel (review gates + CI polling)
 #   8. Report all unsatisfied gates together
@@ -200,12 +200,12 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 5: Gate-skip detection -- sessions that need no PR
+# Step 5: Docs-only / empty-diff detection -- sessions that need no PR
 #
 # Two cases skip the PR + review gates entirely: we're on the base
-# branch itself, or HEAD has no non-.md changes vs origin/$BASE_BRANCH.
-# Evaluated before ensure-pr (Step 6) so these sessions exit cleanly
-# instead of tripping its "no PR found" gate.
+# branch itself, or HEAD's only changes vs origin/$BASE_BRANCH are .md
+# files (or there are none). Evaluated before ensure-pr (Step 6) so
+# these sessions exit cleanly instead of tripping its "no PR found" gate.
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
@@ -215,20 +215,21 @@ if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
         log_info "Currently on base branch ($BASE_BRANCH) -- no PR needed"
         IS_INFORMATIONAL_ONLY=true
     else
-        # An empty diff trivially has no non-.md files, so this single
-        # test covers both "nothing changed yet" and "docs-only".
-        # origin/$BASE_BRANCH is current because Step 4 just fetched it.
+        # A diff with no files, or only .md files, both leave
+        # NON_MD_FILES empty -- so this one test covers "nothing changed
+        # yet" and "docs-only" together. origin/$BASE_BRANCH is current
+        # because Step 4 just fetched it.
         CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
         NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
         if [[ -z "$NON_MD_FILES" ]]; then
-            log_info "No non-.md changes vs $BASE_BRANCH -- skipping review/PR gates"
+            log_info "Diff vs $BASE_BRANCH is empty or docs-only -- skipping review/PR gates"
             IS_INFORMATIONAL_ONLY=true
         fi
     fi
 fi
 
 if [[ "$IS_INFORMATIONAL_ONLY" == "true" ]]; then
-    _log_to_file "INFO" "Informational-only session, exiting cleanly (exit 0)"
+    _log_to_file "INFO" "Skipping review/PR gates, exiting cleanly (exit 0)"
     exit 0
 fi
 
