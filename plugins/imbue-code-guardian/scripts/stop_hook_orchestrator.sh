@@ -202,9 +202,10 @@ fi
 # =========================================================================
 # Step 5: Gate-skip detection -- sessions that need no PR
 #
-# Two cases skip the PR + review gates entirely: on the base branch, or
-# no non-.md changes vs it. Evaluated before ensure-pr (Step 6) so these
-# sessions exit cleanly instead of tripping its "no PR found" gate.
+# Two cases skip the PR + review gates entirely: we're on the base
+# branch itself, or HEAD has no non-.md changes vs origin/$BASE_BRANCH.
+# Evaluated before ensure-pr (Step 6) so these sessions exit cleanly
+# instead of tripping its "no PR found" gate.
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
