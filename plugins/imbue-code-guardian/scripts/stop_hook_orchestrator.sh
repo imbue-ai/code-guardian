@@ -200,14 +200,12 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 5: Gate-skip detection -- sessions that need no PR (before enforcement)
+# Step 5: Gate-skip detection -- sessions that need no PR
 #
-# Three cases skip the PR + review gates entirely: we're on the base
-# branch, there is no diff vs the base branch yet, or only .md files
-# changed. Evaluated before ensure-pr so these sessions exit cleanly
-# instead of tripping the "no PR found" gate in Step 6. (Previously this
-# ran after ensure-pr, so a stop on the base branch hit the PR
-# requirement and exited 2 before this skip could fire.)
+# Three cases skip the PR + review gates entirely: on the base branch,
+# no diff vs the base branch yet, or only .md files changed. Evaluated
+# before ensure-pr (Step 6) so these sessions exit cleanly instead of
+# tripping its "no PR found" gate.
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
