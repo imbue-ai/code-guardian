@@ -8,8 +8,8 @@
 #   2. Stuck agent detection (safety hatch)
 #   3. Uncommitted changes enforcement
 #   4. Fetch and merge base branch
-#   5. Push to origin + ensure PR exists (so CI starts early)
-#   6. Informational session detection (skip if .md-only changes)
+#   5. Docs-only / empty-diff detection
+#   6. Push to origin + ensure PR exists (so CI starts early)
 #   7. Check all gates in parallel (review gates + CI polling)
 #   8. Report all unsatisfied gates together
 #
@@ -200,7 +200,41 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 fi
 
 # =========================================================================
-# Step 5: Push + ensure PR exists (CI starts early)
+# Step 5: Docs-only / empty-diff detection -- sessions that need no PR
+#
+# Two cases skip the PR + review gates entirely: we're on the base
+# branch itself, or HEAD's only changes vs origin/$BASE_BRANCH are .md
+# files (or there are none). Evaluated before ensure-pr (Step 6) so
+# these sessions exit cleanly instead of tripping its "no PR found" gate.
+# =========================================================================
+SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
+IS_INFORMATIONAL_ONLY=false
+
+if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
+    if [[ "$CURRENT_BRANCH" == "$BASE_BRANCH" ]]; then
+        log_info "Currently on base branch ($BASE_BRANCH) -- no PR needed"
+        IS_INFORMATIONAL_ONLY=true
+    else
+        # A diff with no files, or only .md files, both leave
+        # NON_MD_FILES empty -- so this one test covers "nothing changed
+        # yet" and "docs-only" together. origin/$BASE_BRANCH is current
+        # because Step 4 just fetched it.
+        CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
+        NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
+        if [[ -z "$NON_MD_FILES" ]]; then
+            log_info "Diff vs $BASE_BRANCH is empty or docs-only -- skipping review/PR gates"
+            IS_INFORMATIONAL_ONLY=true
+        fi
+    fi
+fi
+
+if [[ "$IS_INFORMATIONAL_ONLY" == "true" ]]; then
+    _log_to_file "INFO" "Skipping review/PR gates, exiting cleanly (exit 0)"
+    exit 0
+fi
+
+# =========================================================================
+# Step 6: Push + ensure PR exists (CI starts early)
 # =========================================================================
 CI_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "ci.is_enabled" "true")
 PR_NUMBER=""
@@ -215,37 +249,6 @@ if [[ "$CI_ENABLED" == "true" ]]; then
         _log_to_file "INFO" "PR check failed (exit=$PR_CI_EXIT)"
         exit "$PR_CI_EXIT"
     fi
-fi
-
-# =========================================================================
-# Step 6: Informational session detection
-# =========================================================================
-SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
-IS_INFORMATIONAL_ONLY=false
-
-if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
-    if [[ "$CURRENT_BRANCH" == "$BASE_BRANCH" ]]; then
-        log_info "Currently on base branch ($BASE_BRANCH) -- no PR needed"
-        IS_INFORMATIONAL_ONLY=true
-    else
-        # Use origin/$BASE_BRANCH since we just fetched
-        CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
-        if [[ -z "$CHANGED_FILES" ]]; then
-            log_info "No files changed compared to $BASE_BRANCH -- informational session"
-            IS_INFORMATIONAL_ONLY=true
-        else
-            NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
-            if [[ -z "$NON_MD_FILES" ]]; then
-                log_info "Only .md files changed compared to $BASE_BRANCH -- informational session"
-                IS_INFORMATIONAL_ONLY=true
-            fi
-        fi
-    fi
-fi
-
-if [[ "$IS_INFORMATIONAL_ONLY" == "true" ]]; then
-    _log_to_file "INFO" "Informational-only session, exiting cleanly (exit 0)"
-    exit 0
 fi
 
 # =========================================================================
