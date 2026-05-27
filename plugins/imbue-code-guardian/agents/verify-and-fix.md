@@ -76,13 +76,17 @@ Fix: <what was changed and why>
 
 Repeat for each issue. Each fix MUST be its own separate commit.
 
-# Step 4: Post-fix Validation
+# Step 4: Post-fix Validation and Marker
 
-After all fixes are committed, run the project test suite. Use whatever test command is specified in the project's CLAUDE.md or README. If none is specified, try `uv run pytest` or the most obvious equivalent.
-
-If tests pass, you are done.
+If you committed one or more fixes, run the project test suite. Use whatever test command is specified in the project's CLAUDE.md or README. If none is specified, try `uv run pytest` or the most obvious equivalent.
 
 If tests fail, fix the failures and commit the fixes. Re-run the tests. Keep fixing and re-running until tests pass. The only acceptable exception is if you can prove a failure is preexisting by running the same test on the base branch and seeing it fail there too.
 
-Once tests pass, create the verification marker by running `date -u +%Y-%m-%dT%H:%M:%SZ > .reviewer/outputs/autofix/$(git rev-parse HEAD)_verified.md`
+If you committed no fixes (e.g., every issue you identified turned out to be sub-threshold, not worth changing, or you decided against fixing it on closer inspection), there is nothing to test -- HEAD is unchanged from the hash you were given.
+
+In all cases, finish by creating the verification marker for the current HEAD:
+
+```bash
+date -u +%Y-%m-%dT%H:%M:%SZ > .reviewer/outputs/autofix/$(git rev-parse HEAD)_verified.md
+```
 
