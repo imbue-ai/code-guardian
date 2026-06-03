@@ -24,7 +24,7 @@ The argument is an optional shell expression controlling when enforcement fires.
 /imbue-code-guardian:reviewer-enable test -n "${MY_AGENT_ENV_VAR:-}"
 ```
 
-Individual gates can be disabled with `/imbue-code-guardian:reviewer-disable`.
+To turn enforcement off entirely, run `/imbue-code-guardian:reviewer-disable` -- the exact inverse of `reviewer-enable`. Individual gates toggle separately via the per-gate skills below (e.g. `reviewer-ci-disable`).
 
 ## Pipeline
 
@@ -61,7 +61,7 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 ### Enable/disable skills
 
 - **reviewer-enable** -- Enable the stop hook. Optionally takes a shell expression for when to enforce.
-- **reviewer-disable** -- Disable all review gates at once.
+- **reviewer-disable** -- Disable the stop hook entirely (clears the master switch; inverse of reviewer-enable).
 - **reviewer-init-categories** -- Copy the default issue categories to `.reviewer/` for customization.
 - **reviewer-autofix-enable / disable** -- Toggle the autofix gate.
 - **reviewer-autofix-all-issues / ignore-minor-issues** -- Control issue severity threshold for unattended autofix.
