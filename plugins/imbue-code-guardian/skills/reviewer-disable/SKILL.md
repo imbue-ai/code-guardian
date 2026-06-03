@@ -1,13 +1,13 @@
 ---
 name: reviewer-disable
-description: Disable the code review stop hook entirely by short-circuiting stop_hook.enabled_when in .reviewer/settings.local.json. Also skips the base-branch fetch/merge.
+description: Disable the code review stop hook entirely by short-circuiting stop_hook.enabled_when in .reviewer/settings.local.json.
 allowed-tools: Bash(jq *)
 ---
 
 Disables the master switch (`stop_hook.enabled_when`) by prefixing it with
-`false && `, so the orchestrator exits immediately -- before any base-branch
-fetch/merge or gate checks. The original expression is preserved after the
-prefix, so `reviewer-enable` (no args) can strip it and restore the prior state.
+`false && `, so the orchestrator exits immediately. The original expression is
+preserved after the prefix, so `reviewer-enable` (no args) can strip it and
+restore the prior state.
 A re-disable is a no-op (it won't stack the prefix), and an empty expression is
 simply set to `false`.
 
