@@ -196,7 +196,21 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
     fi
 
     # Update HASH after merge (may have changed)
-    HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    NEW_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    if [[ "$NEW_HASH" != "$HASH" ]]; then
+        # The base-branch merge moved HEAD. Any conflict would have exited
+        # above, so this is a clean, merge-only change. Carry the per-commit
+        # gate markers forward to the new commit so the gates don't re-fire
+        # purely because of the merge -- the branch's own contribution
+        # (git diff base...HEAD) is unchanged, which is all these gates review.
+        for _f in "autofix/${HASH}_verified.md" "conversation/${HASH}.json"; do
+            _src=".reviewer/outputs/${_f}"
+            if [[ -f "$_src" ]]; then
+                cp "$_src" "${_src/${HASH}/${NEW_HASH}}" 2>/dev/null || true
+            fi
+        done
+    fi
+    HASH="$NEW_HASH"
 fi
 
 # =========================================================================
