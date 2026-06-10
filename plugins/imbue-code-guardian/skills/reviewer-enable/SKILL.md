@@ -18,14 +18,15 @@ Examples of expressions the user might provide:
 - `test -n "${CI:-}"` -- only in CI environments
 - `test "$(git rev-parse --abbrev-ref HEAD)" != "main"` -- only on feature branches
 
-**If no expression is provided**, strip a leading `false && ` left by
-`reviewer-disable` to restore the prior expression; otherwise default to `true`:
+**If no expression is provided**, strip a leading `false && (` and the trailing
+`)` left by `reviewer-disable` to restore the prior expression; otherwise default
+to `true`:
 
 ```bash
 jq -n --argjson existing "$(cat .reviewer/settings.local.json 2>/dev/null || echo '{}')" '
   ($existing.stop_hook.enabled_when // "") as $cur
   | $existing * {"stop_hook": {"enabled_when": (
-      if ($cur | startswith("false && ")) then ($cur | ltrimstr("false && "))
+      if ($cur | startswith("false && (")) then ($cur | ltrimstr("false && (") | rtrimstr(")"))
       else "true"
       end
     )}}
