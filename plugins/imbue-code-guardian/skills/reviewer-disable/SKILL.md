@@ -4,8 +4,11 @@ description: Disable the code review stop hook entirely by short-circuiting stop
 allowed-tools: Bash(jq *)
 ---
 
-Disables the master switch (`stop_hook.enabled_when`) by prefixing it with
-`false && `, so the orchestrator exits immediately. The original expression is
+Disables the master switch (`stop_hook.enabled_when`) by rewriting it as
+`false && (<original>)`, so the orchestrator exits immediately. The original
+expression is wrapped in parentheses — without them, an expression containing
+`||` (e.g. `a || b`) would become `false && a || b`, which parses as
+`(false && a) || b` and would *not* be disabled. The parenthesized original is
 preserved after the prefix, so `reviewer-enable` (no args) can strip it and
 restore the prior state.
 A re-disable is a no-op (it won't stack the prefix), and an empty expression is
@@ -18,8 +21,8 @@ jq -n --argjson existing "$(cat .reviewer/settings.local.json 2>/dev/null || ech
   ($existing.stop_hook.enabled_when // "") as $cur
   | $existing * {"stop_hook": {"enabled_when": (
       if $cur == "" or $cur == "false" then "false"
-      elif ($cur | startswith("false && ")) then $cur
-      else "false && " + $cur
+      elif ($cur | startswith("false && (")) then $cur
+      else "false && (" + $cur + ")"
       end
     )}}
 ' > .reviewer/settings.local.json.tmp && mv .reviewer/settings.local.json.tmp .reviewer/settings.local.json
