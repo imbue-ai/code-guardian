@@ -123,7 +123,7 @@ _poll_ci() {
         log_error "Use the gh tool to inspect the remote test results for this branch and see what failed."
         log_error "Note that you MUST identify the issue and fix it locally before trying again!"
         log_error "NEVER just re-trigger the pipeline!"
-        log_error "If something timed out, investigate a root-cause fix that does not erode the correctness of the test (e.g. make things faster or increase parallelism). Only if such a fix is not feasible should you bump the timeout."
+        log_error "If something timed out, investigate a root-cause fix that does not erode the correctness of the test (e.g. make things faster or increase parallelism). Only bump the timeout for an individual test if such a fix is not feasible (i.e. if there is fundamentally no way to make the test faster while being correct)."
         log_error "If it is impossible to fix the test, tell the user and say that you failed."
         log_error "Otherwise, once you have understood and fixed the issue, you can simply commit to try again."
         _log_to_file "ERROR" "CI checks failed"
