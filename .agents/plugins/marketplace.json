@@ -9,9 +9,7 @@
   "plugins": [
     {
       "name": "imbue-code-guardian-codex",
-      "source": {
-        "path": "./plugins/imbue-code-guardian-codex"
-      },
+      "source": "./plugins/imbue-code-guardian-codex",
       "description": "Automated code review enforcement. Blocks a session from finishing until autofix, architecture verification, and conversation review have run."
     }
   ]
