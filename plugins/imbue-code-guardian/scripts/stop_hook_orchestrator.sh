@@ -82,7 +82,7 @@ BLOCK_TRACKER=".reviewer/outputs/stop_hook_consecutive_blocks"
 trap '
     _exit_code=$?
     _log_to_file "INFO" "orchestrator EXIT trap fired (pid=$$, exit_code=$_exit_code)"
-    if [[ $_exit_code -ne 0 ]] && [[ "$_STUCK_HATCH_FIRED" != "true" ]]; then
+    if [[ $_exit_code -eq 2 ]] && [[ "$_STUCK_HATCH_FIRED" != "true" ]]; then
         mkdir -p "$(dirname "$BLOCK_TRACKER")" 2>/dev/null || true
         echo "$HASH" >> "$BLOCK_TRACKER" 2>/dev/null || true
     fi
@@ -238,27 +238,34 @@ _resolve_base_ref() {
     fi
 }
 
+BASE_REF=$(_resolve_base_ref)
+
+# Every gate diffs against the base branch, so an unresolvable base means none
+# of them can run. Report it here instead of blocking the agent with a demand
+# it has no way to satisfy: exit 1 is non-blocking, so this reaches the human
+# and lets the agent finish. Usual cause is stop_hook.base_branch defaulting to
+# "main" in a repo whose base is named something else.
+if [[ -z "$BASE_REF" ]]; then
+    log_error "Cannot resolve base branch '$BASE_BRANCH' locally or on origin."
+    log_error "The review gates diff against it, so none of them can run."
+    log_error "Check stop_hook.base_branch (currently '$BASE_BRANCH')."
+    _log_to_file "ERROR" "Base branch '$BASE_BRANCH' unresolvable, exiting with 1"
+    exit 1
+fi
+
 if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
     if [[ "$CURRENT_BRANCH" == "$BASE_BRANCH" ]]; then
         log_info "Currently on base branch ($BASE_BRANCH) -- no PR needed"
         IS_INFORMATIONAL_ONLY=true
     else
-        BASE_REF=$(_resolve_base_ref)
-        if [[ -z "$BASE_REF" ]]; then
-            # Skipping is only safe with evidence the diff is harmless.
-            # An unresolvable base is no evidence, so review rather than
-            # wave it through.
-            log_warn "Cannot resolve $BASE_BRANCH locally or on origin -- running gates rather than skipping."
-        else
-            # A diff with no files, or only .md files, both leave
-            # NON_MD_FILES empty -- so this one test covers "nothing changed
-            # yet" and "docs-only" together.
-            CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
-            NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
-            if [[ -z "$NON_MD_FILES" ]]; then
-                log_info "Diff vs $BASE_REF is empty or docs-only -- skipping review/PR gates"
-                IS_INFORMATIONAL_ONLY=true
-            fi
+        # A diff with no files, or only .md files, both leave
+        # NON_MD_FILES empty -- so this one test covers "nothing changed
+        # yet" and "docs-only" together.
+        CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
+        NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
+        if [[ -z "$NON_MD_FILES" ]]; then
+            log_info "Diff vs $BASE_REF is empty or docs-only -- skipping review/PR gates"
+            IS_INFORMATIONAL_ONLY=true
         fi
     fi
 fi
