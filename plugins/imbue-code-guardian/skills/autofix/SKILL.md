@@ -1,7 +1,7 @@
 ---
 name: autofix
 description: Automatically find and fix code issues in the current branch. Iteratively verifies, plans fixes, and implements them with separate commits. Defers all review to the end.
-allowed-tools: Bash(git status *), Bash(git rev-parse *), Bash(git log *), Bash(git revert *), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Bash(echo "${GIT_BASE_BRANCH:-main}"), Read, Write, Agent, AskUserQuestion
+allowed-tools: Bash(git status *), Bash(git rev-parse *), Bash(git log *), Bash(git revert *), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/get_config.sh *), Read, Write, Agent, AskUserQuestion
 ---
 
 # Autofix
@@ -21,7 +21,7 @@ git status --porcelain
 If there are any untracked, staged, or unstaged changes, commit them first (or add them to .gitignore if they should not be tracked). Do NOT proceed until `git status --porcelain` produces no output.
 
 - Initial HEAD (`initial_head`): !`git rev-parse HEAD`
-- Base branch (`base_branch`): !`echo "${GIT_BASE_BRANCH:-main}"`
+- Base branch (`base_branch`): !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/get_config.sh stop_hook.base_branch main`
 
 If you do not already know what the changes on this branch are supposed to accomplish, STOP and ask the user before continuing.
 

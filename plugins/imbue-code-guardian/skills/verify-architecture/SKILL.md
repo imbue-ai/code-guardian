@@ -1,7 +1,7 @@
 ---
 name: verify-architecture
 description: Assess whether the approach taken on a branch is the right way to solve the problem.
-allowed-tools: Bash(git rev-parse *), Bash(git diff *), Bash(git log *), Bash(git show *), Bash(git ls-tree *), Bash(ls *), Bash(find *), Bash(grep *), Bash(echo "${GIT_BASE_BRANCH:-main}"), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Read, Write, Agent, AskUserQuestion
+allowed-tools: Bash(git rev-parse *), Bash(git diff *), Bash(git log *), Bash(git show *), Bash(git ls-tree *), Bash(ls *), Bash(find *), Bash(grep *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/get_config.sh *), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Read, Write, Agent, AskUserQuestion
 ---
 
 # Architecture Verification
@@ -16,7 +16,7 @@ Write a CONCISE description of the problem the branch is trying to solve, based 
 
 ## Context
 
-- Default base branch: !`echo "${GIT_BASE_BRANCH:-main}"` (use this unless the user specified a different one)
+- Default base branch: !`bash ${CLAUDE_PLUGIN_ROOT}/scripts/get_config.sh stop_hook.base_branch main` (use this unless the user specified a different one)
 - Current HEAD: !`git rev-parse HEAD`
 
 ## Phase 2: Validate the Diff
