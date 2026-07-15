@@ -31,6 +31,9 @@ REVIEWER_SETTINGS=".reviewer/settings.json"
 # ensure-pr: verify a PR exists for the current branch
 # ---------------------------------------------------------------------------
 _ensure_pr() {
+    # Every path below writes here, including the early returns.
+    mkdir -p .reviewer/outputs 2>/dev/null || true
+
     local current_branch
     current_branch=$(git rev-parse --abbrev-ref HEAD)
 
@@ -77,7 +80,6 @@ _ensure_pr() {
     fi
 
     # Write PR number for downstream use
-    mkdir -p .reviewer/outputs 2>/dev/null || true
     echo "$existing_pr" > .reviewer/outputs/pr_number
 
     # Write PR URL for status line display

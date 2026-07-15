@@ -53,6 +53,9 @@ export STOP_HOOK_SCRIPT_NAME="orchestrator"
 # shellcheck source=stop_hook_common.sh
 source "$SCRIPT_DIR/stop_hook_common.sh"
 
+# Must precede the first log write, which is what creates .reviewer/.
+ensure_reviewer_gitignore
+
 _log_to_file "INFO" "========================================================"
 _log_to_file "INFO" "Stop hook orchestrator started (pid=$$, ppid=$PPID)"
 _log_to_file "INFO" "========================================================"
@@ -217,27 +220,45 @@ fi
 # Step 5: Docs-only / empty-diff detection -- sessions that need no PR
 #
 # Two cases skip the PR + review gates entirely: we're on the base
-# branch itself, or HEAD's only changes vs origin/$BASE_BRANCH are .md
-# files (or there are none). Evaluated before ensure-pr (Step 6) so
-# these sessions exit cleanly instead of tripping its "no PR found" gate.
+# branch itself, or HEAD's only changes vs the base are .md files (or
+# there are none). Evaluated before ensure-pr (Step 6) so these sessions
+# exit cleanly instead of tripping its "no PR found" gate.
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
+
+# Prefer the remote base, which Step 4 refreshes when fetch_and_merge is on.
+# Fall back to the local branch so repos with no remote -- or with
+# fetch_and_merge off -- still resolve a real ref to diff against.
+_resolve_base_ref() {
+    if git rev-parse --verify -q "origin/$BASE_BRANCH" >/dev/null 2>&1; then
+        echo "origin/$BASE_BRANCH"
+    elif git rev-parse --verify -q "$BASE_BRANCH" >/dev/null 2>&1; then
+        echo "$BASE_BRANCH"
+    fi
+}
 
 if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
     if [[ "$CURRENT_BRANCH" == "$BASE_BRANCH" ]]; then
         log_info "Currently on base branch ($BASE_BRANCH) -- no PR needed"
         IS_INFORMATIONAL_ONLY=true
     else
-        # A diff with no files, or only .md files, both leave
-        # NON_MD_FILES empty -- so this one test covers "nothing changed
-        # yet" and "docs-only" together. origin/$BASE_BRANCH is current
-        # because Step 4 just fetched it.
-        CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
-        NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
-        if [[ -z "$NON_MD_FILES" ]]; then
-            log_info "Diff vs $BASE_BRANCH is empty or docs-only -- skipping review/PR gates"
-            IS_INFORMATIONAL_ONLY=true
+        BASE_REF=$(_resolve_base_ref)
+        if [[ -z "$BASE_REF" ]]; then
+            # Skipping is only safe with evidence the diff is harmless.
+            # An unresolvable base is no evidence, so review rather than
+            # wave it through.
+            log_warn "Cannot resolve $BASE_BRANCH locally or on origin -- running gates rather than skipping."
+        else
+            # A diff with no files, or only .md files, both leave
+            # NON_MD_FILES empty -- so this one test covers "nothing changed
+            # yet" and "docs-only" together.
+            CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
+            NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
+            if [[ -z "$NON_MD_FILES" ]]; then
+                log_info "Diff vs $BASE_REF is empty or docs-only -- skipping review/PR gates"
+                IS_INFORMATIONAL_ONLY=true
+            fi
         fi
     fi
 fi
