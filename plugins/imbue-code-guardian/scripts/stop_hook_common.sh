@@ -120,13 +120,10 @@ log_debug() {
 # ---------------------------------------------------------------------------
 # Keep our own artifacts out of git
 #
-# The uncommitted-changes gate blocks on any untracked file, and the logs and
-# outputs written below .reviewer/ are untracked -- so without this the hook
-# blocks on its own exhaust. The rules ignore .gitignore itself, so the file
-# adds no noise; settings.json and the category files stay trackable.
-#
-# No-op where git would not read the file anyway (e.g. a global .reviewer/
-# rule stops git descending into the directory at all).
+# The uncommitted-changes gate blocks on any untracked file, and .reviewer/
+# logs and outputs are untracked. The rules cover .gitignore itself so it does
+# not become untracked noise of the same kind; settings.json and the category
+# files stay trackable.
 # ---------------------------------------------------------------------------
 ensure_reviewer_gitignore() {
     local dir="${1:-.reviewer}"

@@ -2,11 +2,8 @@
 #
 # get_config.sh
 #
-# Read one reviewer config key from the command line, resolving it exactly as
-# the stop hook does: env var -> settings.local.json -> settings.json ->
-# default. Exists so skills share the hook's resolution instead of reaching for
-# one layer of it and silently disagreeing with the hook about, say, which
-# branch is the base.
+# Command-line reader for one reviewer config key, so skills resolve keys the
+# same way the stop hook does. Precedence is config_utils.sh's.
 #
 # Usage:
 #   ./get_config.sh <key> [default]

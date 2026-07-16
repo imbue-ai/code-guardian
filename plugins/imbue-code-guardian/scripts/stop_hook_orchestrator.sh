@@ -53,7 +53,7 @@ export STOP_HOOK_SCRIPT_NAME="orchestrator"
 # shellcheck source=stop_hook_common.sh
 source "$SCRIPT_DIR/stop_hook_common.sh"
 
-# Must precede the first log write, which is what creates .reviewer/.
+# Must precede the first log write, which creates .reviewer/.
 ensure_reviewer_gitignore
 
 _log_to_file "INFO" "========================================================"
@@ -227,9 +227,8 @@ fi
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
 
-# Prefer the remote base, which Step 4 refreshes when fetch_and_merge is on.
-# Fall back to the local branch so repos with no remote -- or with
-# fetch_and_merge off -- still resolve a real ref to diff against.
+# Prefer the remote base, which Step 4 refreshes when fetch_and_merge is on;
+# fall back to the local branch for repos with no remote.
 _resolve_base_ref() {
     if git rev-parse --verify -q "origin/$BASE_BRANCH" >/dev/null 2>&1; then
         echo "origin/$BASE_BRANCH"
@@ -240,11 +239,8 @@ _resolve_base_ref() {
 
 BASE_REF=$(_resolve_base_ref)
 
-# Every gate diffs against the base branch, so an unresolvable base means none
-# of them can run. Report it here instead of blocking the agent with a demand
-# it has no way to satisfy: exit 1 is non-blocking, so this reaches the human
-# and lets the agent finish. Usual cause is stop_hook.base_branch defaulting to
-# "main" in a repo whose base is named something else.
+# Exit 1 is non-blocking: only a human can fix a misconfigured base branch, so
+# report it to them rather than block the agent with a demand it cannot satisfy.
 if [[ -z "$BASE_REF" ]]; then
     log_error "Cannot resolve base branch '$BASE_BRANCH' locally or on origin."
     log_error "The review gates diff against it, so none of them can run."
