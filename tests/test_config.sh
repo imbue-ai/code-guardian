@@ -291,21 +291,21 @@ assert_eq "$CFG_OUT" "a b c"
 cleanup_repo
 
 # --- malformed JSON ----------------------------------------------------------
-# jq's parse failure is silenced with 2>/dev/null, but `set -e` from
-# config_utils.sh still acts on its non-zero status, so the read aborts with
-# jq's exit code and prints nothing. See the note in the test report.
+# `set -e` from config_utils.sh acts on jq's non-zero status, so the read
+# aborts with jq's exit code rather than falling back to the default. The
+# parse error itself must reach the caller: a config typo that kills the hook
+# with no explanation is the failure this whole area is about.
 it "aborts with jq's exit code on malformed settings.json"
 make_repo main
 write_settings <<'EOF'
 { this is not valid json
 EOF
 read_config stop_hook.base_branch fallback
-assert_eq "$CFG_EXIT" "5" "malformed JSON currently aborts rather than falling back"
-assert_eq "$CFG_OUT" "" "the jq parse error stays silenced"
+assert_eq "$CFG_EXIT" "5" "malformed JSON aborts rather than falling back"
 
-it "does not leak a jq parse error to the caller's output"
-assert_not_contains "$CFG_OUT" "parse error"
-assert_not_contains "$CFG_OUT" "fallback"
+it "says why, instead of failing silently"
+assert_contains "$CFG_OUT" "parse error"
+assert_not_contains "$CFG_OUT" "fallback" "the default must not be passed off as a real value"
 cleanup_repo
 
 it "aborts the same way on malformed settings.local.json"
@@ -318,7 +318,8 @@ write_local_settings <<'EOF'
 EOF
 read_config stop_hook.base_branch fallback
 assert_eq "$CFG_EXIT" "5" "a malformed local file aborts before settings.json is tried"
-assert_eq "$CFG_OUT" ""
+assert_contains "$CFG_OUT" "parse error"
+assert_not_contains "$CFG_OUT" "from_settings" "a broken local file must not silently fall through"
 cleanup_repo
 
 it "reads an empty settings.json as absent rather than aborting"
