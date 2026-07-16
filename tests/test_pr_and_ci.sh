@@ -208,6 +208,25 @@ assert_contains "$RUN_OUT" "success"
 assert_eq "$(cat .reviewer/outputs/pr_status)" "success"
 cleanup_repo
 
+it "creates the outputs directory when run without a prior ensure-pr"
+_setup_poll
+rm -rf .reviewer/outputs
+stub_command gh '
+case "$*" in
+    "pr view 42 --json headRefOid --jq .headRefOid")
+        echo "abc123" ;;
+    "pr checks 42")
+        printf "build\tpass\t1m\thttps://example.invalid/1\n" ;;
+    *)
+        echo "unexpected gh call: $*" >&2; exit 1 ;;
+esac
+'
+run_script stop_hook_pr_and_ci.sh poll-ci 42
+assert_eq "$RUN_EXIT" "0" "green CI must not fail on a missing outputs dir"
+assert_not_contains "$RUN_OUT" "No such file or directory"
+assert_eq "$(cat .reviewer/outputs/pr_status)" "success"
+cleanup_repo
+
 it "blocks when a check fails"
 _setup_poll
 stub_command gh '

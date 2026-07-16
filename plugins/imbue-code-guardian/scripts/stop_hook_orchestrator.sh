@@ -35,6 +35,25 @@ source "$SCRIPT_DIR/config_utils.sh"
 REVIEWER_SETTINGS=".reviewer/settings.json"
 
 # =========================================================================
+# Step 0: Validate the config files
+#
+# Unparseable JSON yields no value for any key, which Step 1 cannot tell
+# apart from "enabled_when was never set" -- so a stray comma would disable
+# every gate and say nothing. Checked before the first read, which is also
+# before logging exists, hence plain stderr.
+#
+# Exit 1 is non-blocking: only a human can fix a typo in their own config.
+# =========================================================================
+for _cfg in "${REVIEWER_SETTINGS%.json}.local.json" "$REVIEWER_SETTINGS"; do
+    if [[ -f "$_cfg" ]] && ! jq empty "$_cfg" 2>/dev/null; then
+        echo "ERROR: $_cfg is not valid JSON." >&2
+        echo "ERROR: The stop hook reads all of its configuration from it and cannot run." >&2
+        echo "ERROR: $(jq empty "$_cfg" 2>&1 | head -1)" >&2
+        exit 1
+    fi
+done
+
+# =========================================================================
 # Step 1: Check enabled_when
 # =========================================================================
 ENABLED_WHEN=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.enabled_when" "")

@@ -58,6 +58,40 @@ BLOCK_TRACKER=".reviewer/outputs/stop_hook_consecutive_blocks"
 STOP_HOOK_LOG=".reviewer/logs/stop_hook.jsonl"
 
 # ===========================================================================
+# Step 0: config validation
+#
+# Unparseable JSON reads as "no value for any key", which is indistinguishable
+# from an unset enabled_when -- so a stray comma used to disable every gate
+# and say nothing about it.
+# ===========================================================================
+it "reports malformed settings.json instead of silently disabling"
+_setup "$_HOOK_ON"
+_commit_code
+printf '{ "stop_hook": { "enabled_when": "true", } }\n' > .reviewer/settings.json
+run_script stop_hook_orchestrator.sh
+assert_eq "$RUN_EXIT" "1" "a typo must be reported (1), never silently skipped (0)"
+assert_contains "$RUN_OUT" "not valid JSON"
+assert_contains "$RUN_OUT" ".reviewer/settings.json"
+cleanup_repo
+
+it "reports malformed settings.local.json too"
+_setup "$_HOOK_ON"
+_commit_code
+printf '{ "stop_hook": { "base_branch": "main",, } }\n' > .reviewer/settings.local.json
+run_script stop_hook_orchestrator.sh
+assert_eq "$RUN_EXIT" "1" "the local override is read first and must be validated"
+assert_contains "$RUN_OUT" "settings.local.json"
+cleanup_repo
+
+it "still runs when the config is valid"
+_setup "$_HOOK_ON"
+_commit_code
+run_script stop_hook_orchestrator.sh
+assert_eq "$RUN_EXIT" "2" "valid config must reach the gates"
+assert_not_contains "$RUN_OUT" "not valid JSON"
+cleanup_repo
+
+# ===========================================================================
 # Step 1: enabled_when
 #
 # The hook is opt-in, and logging starts only once it has opted in -- a

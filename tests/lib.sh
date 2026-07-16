@@ -38,8 +38,10 @@ it() {
     TESTS_RUN=$((TESTS_RUN + 1))
 }
 
+# assert_eq <actual> <expected> [message] -- every caller passes the value
+# under test first, so _fail's slots are filled in the opposite order.
 assert_eq() {
-    [[ "$1" == "$2" ]] || _fail "${3:-values differ}" "$1" "$2"
+    [[ "$1" == "$2" ]] || _fail "${3:-values differ}" "$2" "$1"
 }
 
 assert_contains() {

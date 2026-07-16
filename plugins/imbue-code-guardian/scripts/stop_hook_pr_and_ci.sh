@@ -100,6 +100,10 @@ _ensure_pr() {
 # poll-ci: poll CI status for a PR
 # ---------------------------------------------------------------------------
 _poll_ci() {
+    # Written to below; ensure-pr usually creates it first, but this runs
+    # standalone too.
+    mkdir -p .reviewer/outputs 2>/dev/null || true
+
     local pr_number="${1:-}"
     if [[ -z "$pr_number" ]]; then
         log_error "poll-ci requires a PR number argument"
