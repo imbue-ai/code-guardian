@@ -3,7 +3,7 @@
 # get_config.sh
 #
 # Command-line reader for one reviewer config key, so skills resolve keys the
-# same way the stop hook does. Precedence is config_utils.sh's.
+# same way the stop hook does.
 #
 # Usage:
 #   ./get_config.sh <key> [default]
