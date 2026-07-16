@@ -47,16 +47,18 @@ read_json_config() {
     local jq_path
     jq_path=$(echo "$key" | sed 's/\././g; s/^/./')
 
-    # Local overrides take precedence
+    # Local overrides take precedence. jq's stderr is left alone: a parse error
+    # aborts the read either way, and silencing it means a config typo kills
+    # the caller with nothing to go on.
     if [ -f "$local_path" ]; then
-        val=$(jq -r "if $jq_path == null then empty else $jq_path end" "$local_path" 2>/dev/null)
+        val=$(jq -r "if $jq_path == null then empty else $jq_path end" "$local_path")
         if [ -n "$val" ]; then
             echo "$val"
             return
         fi
     fi
     if [ -f "$config_path" ]; then
-        val=$(jq -r "if $jq_path == null then empty else $jq_path end" "$config_path" 2>/dev/null)
+        val=$(jq -r "if $jq_path == null then empty else $jq_path end" "$config_path")
         if [ -n "$val" ]; then
             echo "$val"
             return

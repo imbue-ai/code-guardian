@@ -118,6 +118,30 @@ log_debug() {
 }
 
 # ---------------------------------------------------------------------------
+# Keep our own artifacts out of git
+#
+# The uncommitted-changes gate blocks on any untracked file, and .reviewer/
+# logs and outputs are untracked. The rules cover .gitignore itself so it does
+# not become untracked noise of the same kind; settings.json and the category
+# files stay trackable.
+# ---------------------------------------------------------------------------
+ensure_reviewer_gitignore() {
+    local dir="${1:-.reviewer}"
+    local target="$dir/.gitignore"
+    if [[ -f "$target" ]]; then
+        return 0
+    fi
+    mkdir -p "$dir" 2>/dev/null || return 0
+    cat > "$target" 2>/dev/null <<'EOF' || return 0
+# Created by code-guardian automatically.
+logs/
+outputs/
+settings.local.json
+.gitignore
+EOF
+}
+
+# ---------------------------------------------------------------------------
 # Retry a command with exponential backoff
 # Usage: retry_command <max_retries> <command...>
 # ---------------------------------------------------------------------------

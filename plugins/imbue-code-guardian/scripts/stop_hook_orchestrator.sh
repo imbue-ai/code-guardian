@@ -35,6 +35,25 @@ source "$SCRIPT_DIR/config_utils.sh"
 REVIEWER_SETTINGS=".reviewer/settings.json"
 
 # =========================================================================
+# Step 0: Validate the config files
+#
+# Unparseable JSON yields no value for any key, which Step 1 cannot tell
+# apart from "enabled_when was never set" -- so a stray comma would disable
+# every gate and say nothing. Checked before the first read, which is also
+# before logging exists, hence plain stderr.
+#
+# Exit 1 is non-blocking: only a human can fix a typo in their own config.
+# =========================================================================
+for _cfg in "${REVIEWER_SETTINGS%.json}.local.json" "$REVIEWER_SETTINGS"; do
+    if [[ -f "$_cfg" ]] && ! jq empty "$_cfg" 2>/dev/null; then
+        echo "ERROR: $_cfg is not valid JSON." >&2
+        echo "ERROR: The stop hook reads all of its configuration from it and cannot run." >&2
+        echo "ERROR: $(jq empty "$_cfg" 2>&1 | head -1)" >&2
+        exit 1
+    fi
+done
+
+# =========================================================================
 # Step 1: Check enabled_when
 # =========================================================================
 ENABLED_WHEN=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.enabled_when" "")
@@ -52,6 +71,9 @@ export STOP_HOOK_SCRIPT_NAME="orchestrator"
 
 # shellcheck source=stop_hook_common.sh
 source "$SCRIPT_DIR/stop_hook_common.sh"
+
+# Must precede the first log write, which creates .reviewer/.
+ensure_reviewer_gitignore
 
 _log_to_file "INFO" "========================================================"
 _log_to_file "INFO" "Stop hook orchestrator started (pid=$$, ppid=$PPID)"
@@ -79,7 +101,7 @@ BLOCK_TRACKER=".reviewer/outputs/stop_hook_consecutive_blocks"
 trap '
     _exit_code=$?
     _log_to_file "INFO" "orchestrator EXIT trap fired (pid=$$, exit_code=$_exit_code)"
-    if [[ $_exit_code -ne 0 ]] && [[ "$_STUCK_HATCH_FIRED" != "true" ]]; then
+    if [[ $_exit_code -eq 2 ]] && [[ "$_STUCK_HATCH_FIRED" != "true" ]]; then
         mkdir -p "$(dirname "$BLOCK_TRACKER")" 2>/dev/null || true
         echo "$HASH" >> "$BLOCK_TRACKER" 2>/dev/null || true
     fi
@@ -217,12 +239,34 @@ fi
 # Step 5: Docs-only / empty-diff detection -- sessions that need no PR
 #
 # Two cases skip the PR + review gates entirely: we're on the base
-# branch itself, or HEAD's only changes vs origin/$BASE_BRANCH are .md
-# files (or there are none). Evaluated before ensure-pr (Step 6) so
-# these sessions exit cleanly instead of tripping its "no PR found" gate.
+# branch itself, or HEAD's only changes vs the base are .md files (or
+# there are none). Evaluated before ensure-pr (Step 6) so these sessions
+# exit cleanly instead of tripping its "no PR found" gate.
 # =========================================================================
 SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
 IS_INFORMATIONAL_ONLY=false
+
+# Prefer the remote base, which Step 4 refreshes when fetch_and_merge is on;
+# fall back to the local branch for repos with no remote.
+_resolve_base_ref() {
+    if git rev-parse --verify -q "origin/$BASE_BRANCH" >/dev/null 2>&1; then
+        echo "origin/$BASE_BRANCH"
+    elif git rev-parse --verify -q "$BASE_BRANCH" >/dev/null 2>&1; then
+        echo "$BASE_BRANCH"
+    fi
+}
+
+BASE_REF=$(_resolve_base_ref)
+
+# Exit 1 is non-blocking: only a human can fix a misconfigured base branch, so
+# report it to them rather than block the agent with a demand it cannot satisfy.
+if [[ -z "$BASE_REF" ]]; then
+    log_error "Cannot resolve base branch '$BASE_BRANCH' locally or on origin."
+    log_error "The review gates diff against it, so none of them can run."
+    log_error "Check stop_hook.base_branch (currently '$BASE_BRANCH')."
+    _log_to_file "ERROR" "Base branch '$BASE_BRANCH' unresolvable, exiting with 1"
+    exit 1
+fi
 
 if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
     if [[ "$CURRENT_BRANCH" == "$BASE_BRANCH" ]]; then
@@ -231,12 +275,11 @@ if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
     else
         # A diff with no files, or only .md files, both leave
         # NON_MD_FILES empty -- so this one test covers "nothing changed
-        # yet" and "docs-only" together. origin/$BASE_BRANCH is current
-        # because Step 4 just fetched it.
-        CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
+        # yet" and "docs-only" together.
+        CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
         NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
         if [[ -z "$NON_MD_FILES" ]]; then
-            log_info "Diff vs $BASE_BRANCH is empty or docs-only -- skipping review/PR gates"
+            log_info "Diff vs $BASE_REF is empty or docs-only -- skipping review/PR gates"
             IS_INFORMATIONAL_ONLY=true
         fi
     fi
