@@ -64,3 +64,33 @@ read_json_config() {
     fi
     echo "$default"
 }
+
+# Read a JSON array of strings from a config file, emitting one element per line.
+# Same lookup precedence as read_json_config (env var -> local -> main). The env
+# var value, if set, is parsed as a JSON array. An explicit array in a
+# higher-precedence file wins even when empty, so a local override can clear a
+# list defined in the checked-in config. Emits nothing if the key is absent.
+# Args: <config_path> <key>
+read_json_array() {
+    local config_path="$1"
+    local key="$2"
+
+    local env_var
+    env_var="CODE_GUARDIAN_$(echo "$key" | tr '[:lower:]' '[:upper:]' | sed 's/\./__/g')"
+    if [ -n "${!env_var:-}" ]; then
+        echo "${!env_var}" | jq -r '.[]' 2>/dev/null
+        return
+    fi
+
+    local local_path="${config_path%.json}.local.json"
+    local jq_path
+    jq_path=$(echo "$key" | sed 's/\././g; s/^/./')
+
+    local f
+    for f in "$local_path" "$config_path"; do
+        if [ -f "$f" ] && jq -e "$jq_path | arrays" "$f" >/dev/null 2>&1; then
+            jq -r "${jq_path}[]" "$f" 2>/dev/null
+            return
+        fi
+    done
+}

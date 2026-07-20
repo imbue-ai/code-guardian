@@ -2,26 +2,28 @@
 #
 # stop_hook_pr_and_ci.sh
 #
-# Two-phase PR and CI management for the stop hook orchestrator.
+# Two-phase PR and CI management for the stop hook orchestrator, scoped to a
+# single git working directory.
 #
 # Phase 1 (ensure-pr): Check that a PR exists for the current branch.
-#   Reopens closed PRs. Writes PR number/URL to .reviewer/outputs/ for downstream use.
+#   Reopens closed PRs. Writes PR number/URL to <dir>/.reviewer/outputs/.
 #   Called early by the orchestrator so CI starts running in parallel.
 #
 # Phase 2 (poll-ci): Poll CI status for a given PR number.
-#   Reads timeout/interval from config. Writes result to .reviewer/outputs/pr_status.
-#   Called later by the orchestrator as a gate alongside review gates.
+#   Reads timeout/interval from config. Writes result to <dir>/.reviewer/outputs/pr_status.
+#   Called later by the orchestrator once review gates pass.
+#
+# The <dir> argument is the target repo. We cd into it so `gh` resolves that
+# repo's own remote natively and all outputs/config resolve relative to it.
 #
 # Usage:
-#   ./stop_hook_pr_and_ci.sh ensure-pr
-#   ./stop_hook_pr_and_ci.sh poll-ci <pr_number>
+#   ./stop_hook_pr_and_ci.sh ensure-pr <dir>
+#   ./stop_hook_pr_and_ci.sh poll-ci <dir> <pr_number>
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export STOP_HOOK_SCRIPT_NAME="pr_and_ci"
-# shellcheck source=stop_hook_common.sh
-source "$SCRIPT_DIR/stop_hook_common.sh"
 # shellcheck source=config_utils.sh
 source "$SCRIPT_DIR/config_utils.sh"
 
@@ -137,6 +139,23 @@ _poll_ci() {
 SUBCOMMAND="${1:-}"
 shift || true
 
+TARGET_DIR="${1:-}"
+shift || true
+if [[ -z "$TARGET_DIR" ]]; then
+    echo "Usage: $0 {ensure-pr <dir>|poll-ci <dir> <pr_number>}" >&2
+    exit 1
+fi
+
+# Scope everything to the target repo: gh resolves that repo's remote from CWD,
+# and all .reviewer/... paths resolve inside the dir.
+cd "$TARGET_DIR"
+
+# Per-dir logging (relative log path is anchored inside the dir by the cd above).
+STOP_HOOK_LOG=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.log_file" ".reviewer/logs/stop_hook.jsonl")
+export STOP_HOOK_LOG
+# shellcheck source=stop_hook_common.sh
+source "$SCRIPT_DIR/stop_hook_common.sh"
+
 case "$SUBCOMMAND" in
     ensure-pr)
         _ensure_pr
@@ -145,7 +164,7 @@ case "$SUBCOMMAND" in
         _poll_ci "$@"
         ;;
     *)
-        echo "Usage: $0 {ensure-pr|poll-ci <pr_number>}" >&2
+        echo "Usage: $0 {ensure-pr <dir>|poll-ci <dir> <pr_number>}" >&2
         exit 1
         ;;
 esac
