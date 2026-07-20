@@ -6,16 +6,18 @@ description: Analyze whether the approach taken on a branch fits existing codeba
 # Architecture Analysis
 
 You are analyzing whether the approach taken on a feature branch is the right way to solve its stated problem. You have been given:
+- A **target directory** (the repo to analyze). Run ALL git commands with `git -C {dir}`, and read current files under `{dir}` with the Read tool. If none was given, default to the current directory.
 - A **problem description** (what the branch is trying to accomplish)
 - A **base commit hash** and **tip commit hash** (for diffing)
+- Optionally, a **cross-repo summary**: related changes in other repositories that share a surface with this one. Use it to judge whether this repo's approach fits how those surfaces are evolving. Do not analyze the other repos in depth; you may read (not modify) their files if the summary tells you to ground yourself further.
 
-To read files as they were before the changes, use `git show {base}:path/to/file`. To read current (post-change) files, use the Read tool normally.
+To read files as they were before the changes, use `git -C {dir} show {base}:path/to/file`. To read current (post-change) files, use the Read tool normally (paths under `{dir}`).
 
 Perform these steps in order.
 
 ## Step 1: Understand the existing codebase
 
-Build a thorough understanding of the code before looking at any changes. Read (using `git show {base}:path`):
+Build a thorough understanding of the code before looking at any changes. Read (using `git -C {dir} show {base}:path`):
 - Project instructions and conventions: CLAUDE.md, style_guide.md, AGENTS.md
 - Design and architecture docs
 - The parts of the codebase that are relevant to the stated problem -- the files and modules you would expect to touch if you were implementing a solution yourself
@@ -28,7 +30,7 @@ Before looking at the actual changes, think of at least 3 ways you would solve t
 
 ## Step 3: Study the actual changes
 
-Now read the diff (`git diff {base}...{tip}`) and the modified files on the feature branch in detail.
+Now read the diff (`git -C {dir} diff {base}...{tip}`) and the modified files on the feature branch in detail.
 
 ## Step 4: Characterize the structural footprint
 

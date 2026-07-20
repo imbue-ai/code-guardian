@@ -9,6 +9,8 @@ allowed-tools: Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.s
 
 Orchestrate a review of the conversation transcript for behavioral issues. You handle setup and coordination; an agent does the actual review.
 
+This is a single, **session-scoped** gate: it reviews the conversation (the agent's behavior), not any one repo's diff, so it runs ONCE per stop cycle and covers all the work regardless of which reviewed directory the code changes landed in. Its marker lives at the root repo's `.reviewer/outputs/conversation/{root HEAD}.json` -- do not run it per directory.
+
 ## Arguments
 
 If the user provides arguments, they serve as additional instructions for this run. For example:
