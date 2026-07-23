@@ -30,9 +30,13 @@ source "$SCRIPT_DIR/config_utils.sh"
 
 MANIFEST="${1:?usage: stop_hook_gates.sh <manifest_file>}"
 
-# Build the command hint for a gate, appending per-config extra instructions
-# (read from the ROOT config, since the review commands are unified).
-_cmd_with_args() {
+# Build a command hint by appending extra instructions to a base command.
+# `_root_cmd` reads a single extra from the ROOT config (used for the
+# conversation gate, which is session-scoped/root-only). `_append_extras`
+# appends a deduped list of extras gathered across dirs (used for the unified
+# autofix/architecture gates -- one invocation covers every changed dir, so each
+# changed dir's own append_to_prompt must flow into the single command).
+_root_cmd() {
     local base="$1" key="$2" extra
     extra=$(read_json_config ".reviewer/settings.json" "$key" "")
     if [[ -n "$extra" ]]; then
@@ -42,14 +46,33 @@ _cmd_with_args() {
     fi
 }
 
-AUTOFIX_CMD=$(_cmd_with_args "/autofix" "autofix.append_to_prompt")
-ARCH_CMD=$(_cmd_with_args "/verify-architecture" "verify_architecture.append_to_prompt")
-CONVO_CMD=$(_cmd_with_args "/verify-conversation" "verify_conversation.append_to_prompt")
+# Args: <base> <extra>... (caller guarantees at least one extra). Emits
+# "<base> <deduped extras joined by space>", preserving first-seen order.
+_append_extras() {
+    local base="$1"; shift
+    local -a out=()
+    local e s dup
+    for e in "$@"; do
+        dup=false
+        if [[ ${#out[@]} -gt 0 ]]; then
+            for s in "${out[@]}"; do [[ "$s" == "$e" ]] && { dup=true; break; }; done
+        fi
+        [[ "$dup" == "true" ]] && continue
+        out+=("$e")
+    done
+    printf '%s %s' "$base" "${out[*]}"
+}
+
+CONVO_CMD=$(_root_cmd "/verify-conversation" "verify_conversation.append_to_prompt")
 
 # Dirs (by gate) still missing a marker.
 AUTOFIX_MISSING=()
 ARCH_MISSING=()
 CONVO_NEEDED=false
+
+# append_to_prompt extras gathered from every changed dir with the gate enabled.
+AUTOFIX_EXTRAS=()
+ARCH_EXTRAS=()
 
 ROOT_HEAD=""
 ANY_CHANGES=false
@@ -65,15 +88,36 @@ while IFS=$'\t' read -r dir head branch has_changes; do
     autofix_enabled=$(read_json_config "$local_settings" "autofix.is_enabled" "true")
     arch_enabled=$(read_json_config "$local_settings" "verify_architecture.is_enabled" "true")
 
-    if [[ "$autofix_enabled" == "true" ]] && [[ ! -f "$dir/.reviewer/outputs/autofix/${head}_verified.md" ]]; then
-        AUTOFIX_MISSING+=("$dir")
+    # Gather each changed dir's own append_to_prompt so the unified command
+    # carries every reviewed repo's extra instructions (the single /autofix /
+    # /verify-architecture invocation reviews all changed dirs at once).
+    if [[ "$autofix_enabled" == "true" ]]; then
+        a_extra=$(read_json_config "$local_settings" "autofix.append_to_prompt" "")
+        [[ -n "$a_extra" ]] && AUTOFIX_EXTRAS+=("$a_extra")
+        if [[ ! -f "$dir/.reviewer/outputs/autofix/${head}_verified.md" ]]; then
+            AUTOFIX_MISSING+=("$dir")
+        fi
     fi
 
-    branch_sanitized="${branch//\//_}"
-    if [[ "$arch_enabled" == "true" ]] && [[ ! -f "$dir/.reviewer/outputs/architecture/${branch_sanitized}.md" ]]; then
-        ARCH_MISSING+=("$dir")
+    if [[ "$arch_enabled" == "true" ]]; then
+        r_extra=$(read_json_config "$local_settings" "verify_architecture.append_to_prompt" "")
+        [[ -n "$r_extra" ]] && ARCH_EXTRAS+=("$r_extra")
+        branch_sanitized="${branch//\//_}"
+        if [[ ! -f "$dir/.reviewer/outputs/architecture/${branch_sanitized}.md" ]]; then
+            ARCH_MISSING+=("$dir")
+        fi
     fi
 done < "$MANIFEST"
+
+# Build the unified command hints now that we know every changed dir's extras.
+AUTOFIX_CMD="/autofix"
+if [[ ${#AUTOFIX_EXTRAS[@]} -gt 0 ]]; then
+    AUTOFIX_CMD=$(_append_extras "/autofix" "${AUTOFIX_EXTRAS[@]}")
+fi
+ARCH_CMD="/verify-architecture"
+if [[ ${#ARCH_EXTRAS[@]} -gt 0 ]]; then
+    ARCH_CMD=$(_append_extras "/verify-architecture" "${ARCH_EXTRAS[@]}")
+fi
 
 # Conversation review is a single, session-scoped gate keyed on the root HEAD.
 # It fires whenever ANY reviewed dir has changes (the agent did work somewhere),

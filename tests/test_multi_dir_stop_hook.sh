@@ -224,6 +224,29 @@ rc=$(run_hook "$R8" "$E8"); assert_exit 0 "$rc" "let through on 4th (stuck)"
 assert_has "$E8" "appears stuck" "explains stuck hatch"
 
 # ===========================================================================
+echo "Scenario 9: a secondary dir's append_to_prompt flows into the unified command"
+R9="$WORK/s9/root"; N9="$R9/nested"; make_repo "$R9"
+write_root_settings "$R9" '["nested"]'; write_gitignore "$R9" "nested/"; commit_push "$R9"
+make_repo "$N9"
+# Secondary settings carrying an autofix append_to_prompt of its own.
+mkdir -p "$N9/.reviewer"
+cat > "$N9/.reviewer/settings.json" <<'EOF'
+{
+  "stop_hook": { "base_branch": "main", "fetch_and_merge": false, "require_committed": true, "skip_informational": true },
+  "ci": { "is_enabled": false },
+  "autofix": { "is_enabled": true, "append_to_prompt": "FOCUS_ON_NESTED_XYZ" },
+  "verify_conversation": { "is_enabled": false },
+  "verify_architecture": { "is_enabled": true }
+}
+EOF
+write_gitignore "$N9"; commit_push "$N9"
+add_feature_change "$N9" feature/w
+# root stays clean on main -> only the nested dir has changes
+E9="$WORK/s9.err"; rc=$(run_hook "$R9" "$E9")
+assert_exit 2 "$rc" "blocks"
+assert_has "$E9" "/autofix FOCUS_ON_NESTED_XYZ" "secondary dir's autofix append_to_prompt reaches the unified command"
+
+# ===========================================================================
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]]
