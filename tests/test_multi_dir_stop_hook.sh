@@ -137,6 +137,12 @@ run_hook() { # <root> <errfile>
     ( cd "$1" && bash "$ORCH" </dev/null 2>"$2" >/dev/null ); echo $?
 }
 
+# Run the orchestrator the way Claude Code does when the agent has cd'd
+# somewhere else: CWD=<cwd> but CLAUDE_PROJECT_DIR=<root>.
+run_hook_from() { # <cwd> <root> <errfile>
+    ( cd "$1" && CLAUDE_PROJECT_DIR="$2" bash "$ORCH" </dev/null 2>"$3" >/dev/null ); echo $?
+}
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -245,6 +251,34 @@ add_feature_change "$N9" feature/w
 E9="$WORK/s9.err"; rc=$(run_hook "$R9" "$E9")
 assert_exit 2 "$rc" "blocks"
 assert_has "$E9" "/autofix FOCUS_ON_NESTED_XYZ" "secondary dir's autofix append_to_prompt reaches the unified command"
+
+# ===========================================================================
+# Stop hooks run in the agent's CURRENT directory, which follows `cd`. If the
+# agent cd'd into a secondary reviewed dir, the orchestrator must still anchor
+# to the project root (CLAUDE_PROJECT_DIR) -- otherwise it would read the
+# secondary dir's config as the root config, so that dir's enabled_when would
+# gate the whole hook and additional_git_directories would be lost, silently
+# skipping all review. This mirrors the real mngr + nested-repo case.
+echo "Scenario 10: hook anchors to CLAUDE_PROJECT_DIR when CWD is inside a secondary dir"
+R10="$WORK/s10/root"; N10="$R10/nested"; make_repo "$R10"
+write_root_settings "$R10" '["nested"]'; write_gitignore "$R10" "nested/"; commit_push "$R10"
+make_repo "$N10"
+# Secondary config that would DISABLE the hook if it were mistaken for the root.
+mkdir -p "$N10/.reviewer"
+cat > "$N10/.reviewer/settings.json" <<'EOF'
+{
+  "stop_hook": { "enabled_when": "false", "base_branch": "main", "fetch_and_merge": false, "require_committed": true, "skip_informational": true },
+  "ci": { "is_enabled": false },
+  "autofix": { "is_enabled": true },
+  "verify_conversation": { "is_enabled": false },
+  "verify_architecture": { "is_enabled": true }
+}
+EOF
+write_gitignore "$N10"; commit_push "$N10"
+add_feature_change "$N10" feature/anchored
+E10="$WORK/s10.err"; rc=$(run_hook_from "$N10" "$R10" "$E10")
+assert_exit 2 "$rc" "still blocks when CWD is the secondary dir"
+assert_has "$E10" "needed in: nested" "still attributes the change to the nested dir"
 
 # ===========================================================================
 echo ""

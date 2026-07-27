@@ -34,6 +34,20 @@ cat > /dev/null 2>&1 || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Anchor to the session's project root before resolving ANY relative path.
+# Claude Code runs Stop hooks in the agent's *current* working directory, which
+# follows `cd` from tool calls. Without this, an agent that cd'd into one of the
+# additional reviewed dirs (the natural thing to do when working in a nested
+# repo) would make the orchestrator read THAT dir's .reviewer/settings.json as
+# the root config -- so its enabled_when would gate the whole hook and
+# additional_git_directories would be lost, silently skipping all review.
+# Everything below (root config, block tracker, per-dir paths) is relative to
+# this directory. Falls back to the current directory when the variable is
+# unset (e.g. direct invocation from tests).
+if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] && [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
+    cd "$CLAUDE_PROJECT_DIR" || exit 1
+fi
+
 # shellcheck source=config_utils.sh
 source "$SCRIPT_DIR/config_utils.sh"
 
