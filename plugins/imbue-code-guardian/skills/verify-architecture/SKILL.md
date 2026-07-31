@@ -1,7 +1,7 @@
 ---
 name: verify-architecture
 description: Assess whether the approach taken on a branch is the right way to solve the problem.
-allowed-tools: Bash(git rev-parse *), Bash(git -C *), Bash(git diff *), Bash(git log *), Bash(git show *), Bash(git ls-tree *), Bash(jq *), Bash(ls *), Bash(find *), Bash(grep *), Bash(echo "${GIT_BASE_BRANCH:-main}"), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Read, Write, Agent, AskUserQuestion
+allowed-tools: Bash(git rev-parse *), Bash(git diff *), Bash(git log *), Bash(git show *), Bash(git ls-tree *), Bash(git -C * rev-parse *), Bash(git -C * diff *), Bash(git -C * log *), Bash(git -C * show *), Bash(git -C * ls-tree *), Bash(ls *), Bash(find *), Bash(grep *), Bash(echo "${GIT_BASE_BRANCH:-main}"), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Read, Write, Agent, AskUserQuestion
 ---
 
 # Architecture Verification

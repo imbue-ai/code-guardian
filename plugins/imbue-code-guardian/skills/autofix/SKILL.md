@@ -1,7 +1,7 @@
 ---
 name: autofix
 description: Automatically find and fix code issues in the current branch. Iteratively verifies, plans fixes, and implements them with separate commits. Defers all review to the end.
-allowed-tools: Bash(git status *), Bash(git rev-parse *), Bash(git log *), Bash(git revert *), Bash(git -C *), Bash(git diff *), Bash(jq *), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Bash(echo "${GIT_BASE_BRANCH:-main}"), Read, Write, Agent, AskUserQuestion
+allowed-tools: Bash(git status *), Bash(git rev-parse *), Bash(git log *), Bash(git diff *), Bash(git revert *), Bash(git -C * status *), Bash(git -C * rev-parse *), Bash(git -C * log *), Bash(git -C * diff *), Bash(git -C * revert *), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Bash(echo "${GIT_BASE_BRANCH:-main}"), Read, Write, Agent, AskUserQuestion
 ---
 
 # Autofix
