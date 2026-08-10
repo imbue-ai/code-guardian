@@ -2,20 +2,25 @@
 #
 # stop_hook_orchestrator.sh
 #
-# Main stop hook orchestrator for code-guardian. Runs the full pipeline:
+# Main stop hook orchestrator for code-guardian. Runs the full pipeline across
+# one or more git working directories (the root repo plus any
+# stop_hook.additional_git_directories):
 #
-#   1. Check enabled_when condition
-#   2. Stuck agent detection (safety hatch)
-#   3. Uncommitted changes enforcement
-#   4. Fetch and merge base branch
-#   5. Docs-only / empty-diff detection
-#   6. Push to origin + ensure PR exists (so CI starts early)
-#   7. Check all gates in parallel (review gates + CI polling)
-#   8. Report all unsatisfied gates together
+#   1. Check enabled_when condition (once, from the ROOT config)
+#   2. Resolve + validate the set of reviewed dirs
+#   3. Stuck agent detection (safety hatch, keyed on the composite state of all dirs)
+#   4. Per-dir non-review pipeline, run concurrently (uncommitted check,
+#      fetch/merge/push, docs-only detection, ensure-PR) -- see
+#      stop_hook_dir_pipeline.sh
+#   5. Unified review-gate check across all dirs (one /autofix, one
+#      /verify-architecture, one /verify-conversation) -- see stop_hook_gates.sh
+#   6. Per-dir CI polling (only once review gates pass)
+#   7. Report all unsatisfied dirs/gates together
 #
-# All configuration is read from .reviewer/settings.json (with
-# .reviewer/settings.local.json overrides). No environment variable
-# fallbacks -- use config for everything.
+# Each reviewed dir is self-contained: its own .reviewer/settings.json,
+# outputs/, and logs/ govern how it is reviewed. The ROOT config additionally
+# provides the master switch (enabled_when), the coordination log, and the
+# conversation gate (which is session-scoped, root-only).
 #
 # Exit codes:
 #   0 -- all gates passed (or hook disabled/skipped)
@@ -29,13 +34,27 @@ cat > /dev/null 2>&1 || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Anchor to the session's project root before resolving ANY relative path.
+# Claude Code runs Stop hooks in the agent's *current* working directory, which
+# follows `cd` from tool calls. Without this, an agent that cd'd into one of the
+# additional reviewed dirs (the natural thing to do when working in a nested
+# repo) would make the orchestrator read THAT dir's .reviewer/settings.json as
+# the root config -- so its enabled_when would gate the whole hook and
+# additional_git_directories would be lost, silently skipping all review.
+# Everything below (root config, block tracker, per-dir paths) is relative to
+# this directory. Falls back to the current directory when the variable is
+# unset (e.g. direct invocation from tests).
+if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] && [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
+    cd "$CLAUDE_PROJECT_DIR" || exit 1
+fi
+
 # shellcheck source=config_utils.sh
 source "$SCRIPT_DIR/config_utils.sh"
 
 REVIEWER_SETTINGS=".reviewer/settings.json"
 
 # =========================================================================
-# Step 1: Check enabled_when
+# Step 1: Check enabled_when (evaluated once, from the root config)
 # =========================================================================
 ENABLED_WHEN=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.enabled_when" "")
 if [[ -z "$ENABLED_WHEN" ]]; then
@@ -45,19 +64,24 @@ if ! bash -c "$ENABLED_WHEN" 2>/dev/null; then
     exit 0
 fi
 
-# Set up logging now that we know the hook is enabled
+# Set up coordination logging now that we know the hook is enabled. Per-dir
+# pipeline steps log into each dir's own log; this root log records the
+# fan-out/aggregate decisions.
 STOP_HOOK_LOG=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.log_file" ".reviewer/logs/stop_hook.jsonl")
 export STOP_HOOK_LOG
 export STOP_HOOK_SCRIPT_NAME="orchestrator"
 
 # shellcheck source=stop_hook_common.sh
 source "$SCRIPT_DIR/stop_hook_common.sh"
+# shellcheck source=stop_hook_dirs.sh
+source "$SCRIPT_DIR/stop_hook_dirs.sh"
 
 _log_to_file "INFO" "========================================================"
 _log_to_file "INFO" "Stop hook orchestrator started (pid=$$, ppid=$PPID)"
 _log_to_file "INFO" "========================================================"
 
 # Trap signals so we can log unexpected terminations
+# shellcheck disable=SC2329  # invoked indirectly via the signal traps below
 _on_signal() {
     local sig="$1"
     _log_to_file "ERROR" "orchestrator received signal $sig (pid=$$) -- UNEXPECTED TERMINATION"
@@ -68,25 +92,45 @@ for _sig in HUP INT QUIT TERM PIPE; do
     trap "_on_signal $_sig" "$_sig"
 done
 
-# Track whether the safety hatch has fired so the EXIT trap doesn't
-# immediately re-create the tracker entry.
-_STUCK_HATCH_FIRED=false
+# =========================================================================
+# Step 2: Resolve + validate the reviewed dirs (root + additional)
+# =========================================================================
+REVIEW_DIRS=()
+resolve_review_dirs "$REVIEWER_SETTINGS"
+_log_to_file "INFO" "Reviewing ${#REVIEW_DIRS[@]} dir(s): ${REVIEW_DIRS[*]}"
 
-HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+# Composite state key across all dirs -- the stuck hatch and block tracking are
+# keyed on this so the whole cycle is treated as one unit. Computed from the
+# pre-merge HEADs (the state the agent left things in).
+_composite_state() {
+    local d h
+    for d in "${REVIEW_DIRS[@]}"; do
+        h=$(git -C "$d" rev-parse HEAD 2>/dev/null || echo "unknown")
+        printf '%s:%s\n' "$d" "$h"
+    done | sort | (sha1sum 2>/dev/null || shasum 2>/dev/null) | cut -d' ' -f1
+}
+COMPOSITE=$(_composite_state)
+ROOT_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
 BLOCK_TRACKER=".reviewer/outputs/stop_hook_consecutive_blocks"
+PHASE_TMP=$(mktemp -d)
 
+# Track whether the safety hatch fired so the EXIT trap doesn't re-create the
+# tracker entry, and always clean up temp files.
+_STUCK_HATCH_FIRED=false
 # shellcheck disable=SC2154  # _exit_code is assigned inside the trap string
 trap '
     _exit_code=$?
     _log_to_file "INFO" "orchestrator EXIT trap fired (pid=$$, exit_code=$_exit_code)"
     if [[ $_exit_code -ne 0 ]] && [[ "$_STUCK_HATCH_FIRED" != "true" ]]; then
         mkdir -p "$(dirname "$BLOCK_TRACKER")" 2>/dev/null || true
-        echo "$HASH" >> "$BLOCK_TRACKER" 2>/dev/null || true
+        echo "$COMPOSITE" >> "$BLOCK_TRACKER" 2>/dev/null || true
     fi
+    rm -rf "$PHASE_TMP" 2>/dev/null || true
 ' EXIT
 
 # =========================================================================
-# Step 2: Stuck agent detection (must be before uncommitted check)
+# Step 3: Stuck agent detection (keyed on composite state of all dirs)
 # =========================================================================
 MAX_CONSECUTIVE_BLOCKS=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.max_consecutive_blocks" "3")
 
@@ -95,248 +139,130 @@ _count_consecutive_blocks() {
         echo 0
         return
     fi
-    local match_count
-    match_count=$(tail -n "$MAX_CONSECUTIVE_BLOCKS" "$BLOCK_TRACKER" | grep -c "^${HASH}$" || true)
-    echo "$match_count"
+    tail -n "$MAX_CONSECUTIVE_BLOCKS" "$BLOCK_TRACKER" | grep -c "^${COMPOSITE}$" || true
 }
 
 CONSECUTIVE_BLOCKS=$(_count_consecutive_blocks)
 if [[ $CONSECUTIVE_BLOCKS -ge $MAX_CONSECUTIVE_BLOCKS ]]; then
-    log_error "Stop hook has blocked ${MAX_CONSECUTIVE_BLOCKS} consecutive times at the same commit ($HASH)."
+    log_error "Stop hook has blocked ${MAX_CONSECUTIVE_BLOCKS} consecutive times at the same state ($COMPOSITE)."
     log_error "The agent appears stuck. Letting through to prevent an infinite loop."
     log_error "The review gates are still unsatisfied -- please investigate manually."
-    _log_to_file "ERROR" "Stuck agent detected at $HASH (${CONSECUTIVE_BLOCKS} blocks), letting through"
+    _log_to_file "ERROR" "Stuck agent detected at $COMPOSITE (${CONSECUTIVE_BLOCKS} blocks), letting through"
     _STUCK_HATCH_FIRED=true
     rm -f "$BLOCK_TRACKER"
     exit 0
 fi
 
 # =========================================================================
-# Step 3: Uncommitted changes enforcement
+# Step 4: Per-dir non-review pipeline, run concurrently
 # =========================================================================
-REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_committed" "true")
+_log_to_file "INFO" "Launching per-dir pipelines..."
 
-if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
-    untracked=$(git ls-files --others --exclude-standard)
-    staged=$(git diff --cached --name-only)
-    unstaged=$(git diff --name-only)
+declare -a DIR_RESULT DIR_STDERR DIR_PIDS DIR_EXIT
+for i in "${!REVIEW_DIRS[@]}"; do
+    DIR_RESULT[i]="$PHASE_TMP/result_$i"
+    DIR_STDERR[i]="$PHASE_TMP/stderr_$i"
+    : > "${DIR_RESULT[i]}"
+    "$SCRIPT_DIR/stop_hook_dir_pipeline.sh" "${REVIEW_DIRS[i]}" "${DIR_RESULT[i]}" 2>"${DIR_STDERR[i]}" &
+    DIR_PIDS[i]=$!
+done
 
-    if [[ -n "$untracked" ]] || [[ -n "$staged" ]] || [[ -n "$unstaged" ]]; then
-        echo "ERROR: Uncommitted changes detected. All changes must be committed before this hook can run." >&2
-        echo "ERROR: Please commit or gitignore all files before stopping." >&2
-        if [[ -n "$untracked" ]]; then
-            echo "" >&2
-            echo "Untracked files (need to git add or add to .gitignore):" >&2
-            while IFS= read -r _f; do echo "  $_f" >&2; done <<< "$untracked"
-        fi
-        if [[ -n "$unstaged" ]]; then
-            echo "" >&2
-            echo "Unstaged changes (need to git add):" >&2
-            while IFS= read -r _f; do echo "  $_f" >&2; done <<< "$unstaged"
-        fi
-        if [[ -n "$staged" ]]; then
-            echo "" >&2
-            echo "Staged but not committed (need to git commit):" >&2
-            while IFS= read -r _f; do echo "  $_f" >&2; done <<< "$staged"
-        fi
-        echo "" >&2
-        echo "All files must be either gitignored or committed before stopping." >&2
-        echo "If you're not ready to commit yet because the task is not yet complete (ex: tests do not pass or you have a question for the user), simply prefix your commit message with WIP:" >&2
-        _log_to_file "ERROR" "Uncommitted changes detected, exiting with 2"
-        exit 2
+for i in "${!DIR_PIDS[@]}"; do
+    _ec=0
+    wait "${DIR_PIDS[i]}" || _ec=$?
+    DIR_EXIT[i]=$_ec
+    _log_to_file "INFO" "dir '${REVIEW_DIRS[i]}' pipeline exited with $_ec"
+done
+
+_result_get() { grep -m1 "^$2=" "$1" 2>/dev/null | cut -d= -f2- || true; }
+
+# =========================================================================
+# Step 5: Build the manifest + run the unified review-gate check
+# =========================================================================
+MANIFEST="$PHASE_TMP/manifest"
+: > "$MANIFEST"
+PHASE1_FAILED=false
+for i in "${!REVIEW_DIRS[@]}"; do
+    _dir="${REVIEW_DIRS[i]}"
+    _head=$(_result_get "${DIR_RESULT[i]}" HEAD)
+    _branch=$(_result_get "${DIR_RESULT[i]}" BRANCH)
+    _has=$(_result_get "${DIR_RESULT[i]}" HAS_CHANGES)
+    if [[ "${DIR_EXIT[i]}" -ne 0 ]]; then
+        PHASE1_FAILED=true
+        # A hard non-review failure is already reported via this dir's stderr;
+        # don't also demand review gates for it.
+        _has="false"
     fi
-fi
+    printf '%s\t%s\t%s\t%s\n' "$_dir" "${_head:-unknown}" "${_branch:-unknown}" "${_has:-false}" >> "$MANIFEST"
+done
 
-# =========================================================================
-# Step 4: Fetch and merge base branch
-# =========================================================================
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
-FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_merge" "true")
-
-if [[ "$FETCH_AND_MERGE" == "true" ]]; then
-    _log_to_file "INFO" "Fetching all remotes (base_branch=$BASE_BRANCH)"
-    log_info "Fetching all remotes..."
-    git fetch --all
-
-    # Push base branch if it doesn't exist on origin yet
-    if ! git rev-parse --verify "origin/$BASE_BRANCH" >/dev/null 2>&1; then
-        log_info "Pushing base branch to origin (not yet present remotely)..."
-        if ! retry_command 3 git push origin "$BASE_BRANCH"; then
-            log_error "Failed to push base branch after retries."
-            exit 2
-        fi
-    fi
-
-    # Merge origin base branch
-    if git rev-parse --verify "origin/$BASE_BRANCH" >/dev/null 2>&1; then
-        log_info "Merging origin/$BASE_BRANCH..."
-        if ! git merge "origin/$BASE_BRANCH" --no-edit; then
-            log_error "Merge conflict detected while merging origin/$BASE_BRANCH."
-            log_error "Please resolve the merge conflicts before continuing."
-            exit 2
-        fi
-    fi
-
-    # Merge local base branch
-    if git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
-        log_info "Merging $BASE_BRANCH..."
-        if ! git merge "$BASE_BRANCH" --no-edit; then
-            log_error "Merge conflict detected while merging $BASE_BRANCH."
-            log_error "Please resolve the merge conflicts before continuing."
-            exit 2
-        fi
-    fi
-
-    # Push merge commits (if any), setting upstream tracking
-    log_info "Pushing any merge commits..."
-    if ! retry_command 3 git push -u origin HEAD; then
-        log_error "Failed to push after retries. Perhaps you forgot to commit something? Or pre-commit hooks changed something?"
-        exit 2
-    fi
-
-    # Update HASH after merge (may have changed)
-    NEW_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-    if [[ "$NEW_HASH" != "$HASH" ]]; then
-        # The base-branch merge moved HEAD. Any conflict would have exited
-        # above, so this is a clean, merge-only change. Carry the per-commit
-        # gate markers forward to the new commit so the gates don't re-fire
-        # purely because of the merge -- the branch's own contribution
-        # (git diff base...HEAD) is unchanged, which is all these gates review.
-        for _f in "autofix/${HASH}_verified.md" "conversation/${HASH}.json"; do
-            _src=".reviewer/outputs/${_f}"
-            if [[ -f "$_src" ]]; then
-                cp "$_src" "${_src/${HASH}/${NEW_HASH}}" 2>/dev/null || true
-            fi
-        done
-    fi
-    HASH="$NEW_HASH"
-fi
-
-# =========================================================================
-# Step 5: Docs-only / empty-diff detection -- sessions that need no PR
-#
-# Two cases skip the PR + review gates entirely: we're on the base
-# branch itself, or HEAD's only changes vs origin/$BASE_BRANCH are .md
-# files (or there are none). Evaluated before ensure-pr (Step 6) so
-# these sessions exit cleanly instead of tripping its "no PR found" gate.
-# =========================================================================
-SKIP_INFORMATIONAL=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.skip_informational" "true")
-IS_INFORMATIONAL_ONLY=false
-
-if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
-    if [[ "$CURRENT_BRANCH" == "$BASE_BRANCH" ]]; then
-        log_info "Currently on base branch ($BASE_BRANCH) -- no PR needed"
-        IS_INFORMATIONAL_ONLY=true
-    else
-        # A diff with no files, or only .md files, both leave
-        # NON_MD_FILES empty -- so this one test covers "nothing changed
-        # yet" and "docs-only" together. origin/$BASE_BRANCH is current
-        # because Step 4 just fetched it.
-        CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
-        NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
-        if [[ -z "$NON_MD_FILES" ]]; then
-            log_info "Diff vs $BASE_BRANCH is empty or docs-only -- skipping review/PR gates"
-            IS_INFORMATIONAL_ONLY=true
-        fi
-    fi
-fi
-
-if [[ "$IS_INFORMATIONAL_ONLY" == "true" ]]; then
-    _log_to_file "INFO" "Skipping review/PR gates, exiting cleanly (exit 0)"
-    exit 0
-fi
-
-# =========================================================================
-# Step 6: Push + ensure PR exists (CI starts early)
-# =========================================================================
-CI_ENABLED=$(read_json_config "$REVIEWER_SETTINGS" "ci.is_enabled" "true")
-PR_NUMBER=""
-
-if [[ "$CI_ENABLED" == "true" ]]; then
-    _log_to_file "INFO" "Checking PR existence..."
-    if "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" ensure-pr; then
-        PR_NUMBER=$(cat .reviewer/outputs/pr_number 2>/dev/null || echo "")
-        _log_to_file "INFO" "PR check passed (pr_number=$PR_NUMBER)"
-    else
-        PR_CI_EXIT=$?
-        _log_to_file "INFO" "PR check failed (exit=$PR_CI_EXIT)"
-        exit "$PR_CI_EXIT"
-    fi
-fi
-
-# =========================================================================
-# Step 7: Check all gates in parallel (review gates + CI)
-# =========================================================================
-_log_to_file "INFO" "Starting parallel gate checks..."
-
-# Temporary files for capturing output from parallel processes
-GATE_STDERR=$(mktemp)
-CI_STDERR=$(mktemp)
-_cleanup_temp() {
-    rm -f "$GATE_STDERR" "$CI_STDERR"
-}
-
+GATE_STDERR="$PHASE_TMP/gate_stderr"
 GATES_EXIT=0
+"$SCRIPT_DIR/stop_hook_gates.sh" "$MANIFEST" 2>"$GATE_STDERR" || GATES_EXIT=$?
+_log_to_file "INFO" "Unified gate check exited with $GATES_EXIT"
+
+# =========================================================================
+# Step 6: Per-dir CI polling -- only once phase-1 and review gates are clean.
+# (No point making the agent wait out CI when it already has work to do.)
+# =========================================================================
+CI_STDERR="$PHASE_TMP/ci_stderr"
+: > "$CI_STDERR"
 CI_EXIT=0
 
-# Launch review gates
-"$SCRIPT_DIR/stop_hook_gates.sh" "$HASH" 2>"$GATE_STDERR" &
-GATES_PID=$!
-_log_to_file "INFO" "Launched stop_hook_gates.sh (pid=$GATES_PID)"
-
-# Launch CI polling if enabled and PR exists
-CI_PID=""
-if [[ "$CI_ENABLED" == "true" ]] && [[ -n "$PR_NUMBER" ]]; then
-    "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" poll-ci "$PR_NUMBER" 2>"$CI_STDERR" &
-    CI_PID=$!
-    _log_to_file "INFO" "Launched CI polling (pid=$CI_PID, pr=$PR_NUMBER)"
-fi
-
-# Wait for review gates
-wait "$GATES_PID" || GATES_EXIT=$?
-_log_to_file "INFO" "Gates process exited with code $GATES_EXIT"
-
-# If gates failed, short-circuit: terminate CI polling and report immediately.
-# Otherwise the agent is forced to wait out the full CI poll timeout (up to
-# ci.timeout seconds, default 600) before learning that a gate failed in the
-# first 0.5s -- even though CI results don't change what they need to do next.
-if [[ -n "$CI_PID" ]] && [[ $GATES_EXIT -ne 0 ]]; then
-    _log_to_file "INFO" "Gates failed; terminating CI poll early (pid=$CI_PID)"
-    pkill -TERM -P "$CI_PID" 2>/dev/null || true
-    kill -TERM "$CI_PID" 2>/dev/null || true
-    wait "$CI_PID" 2>/dev/null || true
-    CI_PID=""
-fi
-
-# Wait for CI if still running
-if [[ -n "$CI_PID" ]]; then
-    wait "$CI_PID" || CI_EXIT=$?
-    _log_to_file "INFO" "CI process exited with code $CI_EXIT"
+if [[ "$PHASE1_FAILED" == "false" ]] && [[ $GATES_EXIT -eq 0 ]]; then
+    declare -a CI_PIDS CI_ERR CI_WHICH
+    _k=0
+    for i in "${!REVIEW_DIRS[@]}"; do
+        _poll=$(_result_get "${DIR_RESULT[i]}" POLL_CI)
+        _pr=$(_result_get "${DIR_RESULT[i]}" PR_NUMBER)
+        if [[ "$_poll" == "true" ]] && [[ -n "$_pr" ]]; then
+            CI_ERR[_k]="$PHASE_TMP/ci_stderr_$i"
+            CI_WHICH[_k]="${REVIEW_DIRS[i]}"
+            "$SCRIPT_DIR/stop_hook_pr_and_ci.sh" poll-ci "${REVIEW_DIRS[i]}" "$_pr" 2>"${CI_ERR[_k]}" &
+            CI_PIDS[_k]=$!
+            _log_to_file "INFO" "Launched CI poll for '${REVIEW_DIRS[i]}' (pr=$_pr)"
+            _k=$((_k + 1))
+        fi
+    done
+    for m in "${!CI_PIDS[@]}"; do
+        _ec=0
+        wait "${CI_PIDS[m]}" || _ec=$?
+        if [[ $_ec -ne 0 ]]; then
+            CI_EXIT=$_ec
+            {
+                echo "[${CI_WHICH[m]}] CI checks have not passed:"
+                cat "${CI_ERR[m]}" 2>/dev/null || true
+                echo ""
+            } >> "$CI_STDERR"
+        fi
+    done
 fi
 
 # =========================================================================
-# Step 8: Report results
+# Step 7: Report results
 # =========================================================================
-if [[ $GATES_EXIT -ne 0 ]] || [[ $CI_EXIT -ne 0 ]]; then
-    _log_to_file "INFO" "Gates or CI failed (gates=$GATES_EXIT, ci=$CI_EXIT)"
+if [[ "$PHASE1_FAILED" == "true" ]] || [[ $GATES_EXIT -ne 0 ]] || [[ $CI_EXIT -ne 0 ]]; then
+    _log_to_file "INFO" "Blocking (phase1_failed=$PHASE1_FAILED, gates=$GATES_EXIT, ci=$CI_EXIT)"
 
-    # Relay gate errors to stderr (these contain the missing gates report)
+    # Per-dir non-review failures first, each already dir-tagged on its stderr.
+    for i in "${!REVIEW_DIRS[@]}"; do
+        if [[ "${DIR_EXIT[i]}" -ne 0 ]] && [[ -s "${DIR_STDERR[i]}" ]]; then
+            cat "${DIR_STDERR[i]}" >&2
+            echo "" >&2
+        fi
+    done
+
+    # Unified review-gate report.
     if [[ $GATES_EXIT -ne 0 ]] && [[ -s "$GATE_STDERR" ]]; then
         cat "$GATE_STDERR" >&2
     fi
 
-    # Relay CI errors to stderr
+    # CI failures (per dir).
     if [[ $CI_EXIT -ne 0 ]] && [[ -s "$CI_STDERR" ]]; then
-        # Add separator if both failed
-        if [[ $GATES_EXIT -ne 0 ]]; then
-            echo "" >&2
-            echo "Additionally, CI checks have not passed:" >&2
-        fi
+        echo "" >&2
         cat "$CI_STDERR" >&2
     fi
 
-    _cleanup_temp
     _log_to_file "INFO" "orchestrator exiting with code 2 (unsatisfied gates)"
     exit 2
 fi
@@ -345,10 +271,8 @@ fi
 # Success -- clear stuck tracking, write success marker
 # =========================================================================
 rm -f "$BLOCK_TRACKER"
-_cleanup_temp
-
 mkdir -p .reviewer/outputs 2>/dev/null || true
-echo "$HASH" > .reviewer/outputs/orchestrator_success
+echo "$ROOT_HEAD" > .reviewer/outputs/orchestrator_success
 
 _log_to_file "INFO" "orchestrator completed successfully (exit 0)"
 exit 0
