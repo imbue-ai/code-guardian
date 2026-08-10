@@ -134,7 +134,17 @@ fi
 # =========================================================================
 # Step 4: Fetch and merge base branch
 # =========================================================================
-BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
+# The base-branch env override (CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH) is
+# per-agent config for the agent's OWN repo -- e.g. mngr exports the agent's
+# base branch for every agent it creates. A secondary dir's base branch is its
+# own settings' concern (each reviewed repo is self-contained), so blank the
+# override for non-root dirs; read_json_config treats an empty env var as
+# unset and falls through to the dir's settings(.local).json.
+if [[ "$DIR" == "." ]]; then
+    BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
+else
+    BASE_BRANCH=$(CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH="" read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
+fi
 REMOTE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.remote" "origin")
 FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_merge" "true")
 

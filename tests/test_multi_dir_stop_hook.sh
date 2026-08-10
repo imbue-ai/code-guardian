@@ -21,6 +21,7 @@
 #   11. uncommitted_exempt_paths: exempt subtree dirt passes, other dirt blocks
 #   12. Stray settings nested in a larger repo's tree -> hook skips, no action
 #   13. Additional dir that is a subdir inside another repo -> hard error
+#   14. Root-scoped base-branch env override does not leak into a secondary dir
 
 set -uo pipefail
 
@@ -351,6 +352,24 @@ cp "$N13/.reviewer/settings.json" "$N13/sub/.reviewer/settings.json"
 E13="$WORK/s13.err"; rc=$(run_hook "$R13" "$E13")
 assert_exit 2 "$rc" "blocks"
 assert_has "$E13" "not the toplevel" "rejects a non-toplevel additional dir"
+
+# ===========================================================================
+# The CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH env override is per-agent config for
+# the agent's OWN repo (e.g. mngr exports the agent's base branch). A secondary
+# dir's base branch comes from its own settings. If the override leaked in, the
+# nested dir would be diffed against a branch that doesn't exist there -- an
+# empty-looking diff that silently drops the dir from review.
+echo "Scenario 14: root-scoped base-branch env override does not leak into a secondary dir"
+R14="$WORK/s14/root"; N14="$R14/nested"; make_repo "$R14"
+write_root_settings "$R14" '["nested"]'; write_gitignore "$R14" "nested/"; commit_push "$R14"
+make_repo "$N14"
+write_secondary_settings "$N14"; write_gitignore "$N14"; commit_push "$N14"
+add_feature_change "$N14" feature/envleak
+# root stays clean on main -> only the nested dir has changes
+E14="$WORK/s14.err"
+rc=$(CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH="agent-base-branch" run_hook "$R14" "$E14")
+assert_exit 2 "$rc" "still blocks on the nested dir's changes"
+assert_has "$E14" "needed in: nested" "nested dir reviewed against its own base branch"
 
 # ===========================================================================
 echo ""
