@@ -7,11 +7,14 @@
 # stop_hook.additional_git_directories in the ROOT .reviewer/settings.json.
 #
 # Each additional dir is a self-contained repo (its own .git, remote, base
-# branch, and .reviewer/ config). A misconfigured entry hard-errors (exit 2)
-# so a listed dir can never silently go unreviewed.
+# branch, and .reviewer/ config). An entry that is absent is skipped -- the
+# list is shared config, and not every checkout of the root repo has every
+# nested repo present. An entry that DOES exist but is misconfigured
+# hard-errors (exit 2), so a dir that is really there can never silently go
+# unreviewed.
 #
 # Requires config_utils.sh and stop_hook_common.sh to be sourced first
-# (for read_json_array and log_error).
+# (for read_json_array, log_error, and _log_to_file).
 #
 # Usage:
 #   resolve_review_dirs "<root_settings_path>"   # populates REVIEW_DIRS array
@@ -30,9 +33,12 @@ resolve_review_dirs() {
         # Root is always reviewed implicitly; ignore an explicit "." entry.
         [ "$dir" == "." ] && continue
 
+        # Absent is not an error: the same root config is shared by every
+        # checkout, and a nested repo is only present in the checkouts that
+        # are actively working on it.
         if [[ ! -d "$dir" ]]; then
-            log_error "additional_git_directories: '$dir' does not exist."
-            exit 2
+            _log_to_file "INFO" "additional_git_directories: '$dir' not present, skipping."
+            continue
         fi
         if ! this_gitdir=$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null); then
             log_error "additional_git_directories: '$dir' is not a git repository."

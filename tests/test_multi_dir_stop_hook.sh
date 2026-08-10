@@ -12,7 +12,8 @@
 #   1. Backward-compat: root-only, changes, no markers -> block (classic report)
 #   2. Secondary-only changes -> block, dir-tagged unified report (the bug fix)
 #   3. All markers present -> pass (exit 0)
-#   4/5/6. Misconfigured additional dir (missing / non-repo / no settings) -> hard error
+#   4. Absent additional dir -> skipped, root still reviewed
+#   5/6. Misconfigured additional dir (non-repo / no settings) -> hard error
 #   7. Uncommitted changes in a secondary dir -> block, dir-tagged
 #   8. Composite stuck hatch -> lets through after N identical-state blocks
 
@@ -181,12 +182,19 @@ E3="$WORK/s3.err"; rc=$(run_hook "$R2" "$E3")
 assert_exit 0 "$rc" "passes once every changed dir is marked"
 
 # ===========================================================================
-echo "Scenario 4: additional dir does not exist -> hard error"
+echo "Scenario 4: additional dir does not exist -> skipped, root still reviewed"
 R4="$WORK/s4/root"; make_repo "$R4"
 write_root_settings "$R4" '["ghost"]'; write_gitignore "$R4"; commit_push "$R4"
+add_feature_change "$R4" feature/v
 E4="$WORK/s4.err"; rc=$(run_hook "$R4" "$E4")
-assert_exit 2 "$rc" "blocks"
-assert_has "$E4" "does not exist" "explains missing dir"
+assert_exit 2 "$rc" "blocks on the root's own gates"
+assert_has "$E4" "autofix (/autofix)" "reports the root's autofix gate"
+assert_not "$E4" "ghost" "absent dir is not mentioned"
+assert_not "$E4" "needed in:" "absent dir is dropped from the reviewed set"
+# ...and once the root's markers are in place, the absent dir doesn't hold it back.
+mark_autofix "$R4"; mark_arch "$R4"; mark_convo_root "$R4"
+rc=$(run_hook "$R4" "$WORK/s4b.err")
+assert_exit 0 "$rc" "passes with only the root marked"
 
 # ===========================================================================
 echo "Scenario 5: additional dir shares the root repo (not distinct) -> hard error"
