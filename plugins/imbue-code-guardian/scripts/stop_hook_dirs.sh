@@ -27,7 +27,7 @@ resolve_review_dirs() {
     local root_gitdir
     root_gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null || echo "")
 
-    local dir this_gitdir
+    local dir this_gitdir this_toplevel
     while IFS= read -r dir; do
         [ -z "$dir" ] && continue
         # Root is always reviewed implicitly; ignore an explicit "." entry.
@@ -46,6 +46,15 @@ resolve_review_dirs() {
         fi
         if [[ -n "$root_gitdir" && "$this_gitdir" == "$root_gitdir" ]]; then
             log_error "additional_git_directories: '$dir' resolves to the root repository, not a distinct repo."
+            exit 2
+        fi
+        # The entry must BE a repo toplevel, not a subdirectory inside one:
+        # the dir pipeline reads $dir/.reviewer/settings.json but its git
+        # commands resolve to the containing repo, so a subdirectory entry
+        # would apply one tree's config to another repo.
+        this_toplevel=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || echo "")
+        if [[ -z "$this_toplevel" ]] || ! [[ "$dir" -ef "$this_toplevel" ]]; then
+            log_error "additional_git_directories: '$dir' is not the toplevel of its git repository."
             exit 2
         fi
         if [[ ! -f "$dir/.reviewer/settings.json" ]]; then

@@ -91,9 +91,19 @@ _dir_err() { echo "[$DIR] $*" >&2; }
 REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_committed" "true")
 
 if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
-    untracked=$(_git ls-files --others --exclude-standard)
-    staged=$(_git diff --cached --name-only)
-    unstaged=$(_git diff --name-only)
+    # Paths whose uncommitted changes are expected machine-generated state
+    # (e.g. a vendored subtree a dev loop rsyncs into the working tree).
+    # Excluded from the clean-tree check only; committed changes under these
+    # paths are still diffed, reviewed, and pushed like any others.
+    EXEMPT_PATHSPECS=()
+    while IFS= read -r _p; do
+        [ -z "$_p" ] && continue
+        EXEMPT_PATHSPECS+=(":(exclude)$_p")
+    done < <(read_json_array "$REVIEWER_SETTINGS" "stop_hook.uncommitted_exempt_paths")
+
+    untracked=$(_git ls-files --others --exclude-standard -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
+    staged=$(_git diff --cached --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
+    unstaged=$(_git diff --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
 
     if [[ -n "$untracked" ]] || [[ -n "$staged" ]] || [[ -n "$unstaged" ]]; then
         _dir_err "ERROR: Uncommitted changes detected. All changes must be committed before this hook can run."

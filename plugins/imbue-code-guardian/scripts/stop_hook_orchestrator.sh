@@ -53,6 +53,20 @@ source "$SCRIPT_DIR/config_utils.sh"
 
 REVIEWER_SETTINGS=".reviewer/settings.json"
 
+# The settings file must belong to the repo the hook is about to operate on:
+# every git command below is bare, resolved upward from the current directory.
+# A .reviewer/settings.json nested inside a LARGER repo's tree (e.g. a vendored
+# copy of a repo that ships one) would otherwise drive merges and pushes
+# against the enclosing repo using config that was never written for it. That
+# mismatch can only arise when the anchor fell back to a cwd inside such a
+# subtree, so skip rather than act on another repo's config.
+if [[ -f "$REVIEWER_SETTINGS" ]]; then
+    TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    if [[ -z "$TOPLEVEL" ]] || ! [[ "$TOPLEVEL" -ef "$PWD" ]]; then
+        exit 0
+    fi
+fi
+
 # =========================================================================
 # Step 1: Check enabled_when (evaluated once, from the root config)
 # =========================================================================

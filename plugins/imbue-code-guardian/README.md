@@ -48,7 +48,7 @@ When enabled, the stop hook orchestrator runs every time Claude finishes a respo
 
 ## Configuration
 
-Settings live in `.reviewer/settings.json` (checked-in project defaults) with `.reviewer/settings.local.json` overrides (gitignored, per-worktree).
+Settings live in `.reviewer/settings.json` (checked-in project defaults) with `.reviewer/settings.local.json` overrides (gitignored, per-worktree). The `.reviewer/` directory must sit at the repo's toplevel: a settings file found anywhere else (e.g. a vendored copy of a repo that ships one, nested inside a larger repo's tree) does not govern the repo it happens to sit in, and the hook skips rather than act on it.
 
 Every config key also has a corresponding environment variable that takes precedence over both files. The mapping is `key.subkey` → `CODE_GUARDIAN_KEY__SUBKEY` (uppercased, dots replaced with double underscores so the section boundary stays recoverable from the env var name). For example:
 
@@ -79,6 +79,7 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 | `stop_hook.base_branch` | string | `"main"` | Base branch for merge/diff operations. |
 | `stop_hook.remote` | string | `"origin"` | Git remote to fetch/merge/push against. |
 | `stop_hook.require_committed` | bool | `true` | Enforce all changes committed before hook passes. |
+| `stop_hook.uncommitted_exempt_paths` | list | `[]` | Git pathspecs whose uncommitted changes the `require_committed` check ignores -- for expected machine-generated state, e.g. a vendored subtree a dev loop rsyncs into the working tree. Committed changes under these paths are still diffed, reviewed, and pushed normally. |
 | `stop_hook.fetch_and_merge` | bool | `true` | Fetch/merge/push base branch on each stop. |
 | `stop_hook.skip_informational` | bool | `true` | Skip checks when only .md files changed (or nothing changed) vs base. |
 | `stop_hook.log_file` | string | `".reviewer/logs/stop_hook.jsonl"` | JSONL log file path (per reviewed dir; anchored inside each dir). |
@@ -118,7 +119,7 @@ Key properties:
 - **Self-contained per repo.** Each listed dir must be a distinct git repo with its own `.reviewer/settings.json` (plus optional `.local.json`). That config is the sole source of truth for how the dir is reviewed: its `base_branch`, `remote`, which gates run, `ci.*`, etc. Its markers, logs, and PR/CI outputs all live inside its own `.reviewer/`, exactly as if the hook ran there standalone.
 - **Root is always reviewed** implicitly; the list only *adds* directories. Paths are relative to the root repo.
 - **Absent dirs are skipped.** The root config is shared by every checkout, but a nested repo is typically only present in the checkouts actively working on it. A listed dir that doesn't exist is quietly ignored (noted in the log), so the list can name a dir that is only sometimes cloned.
-- **Hard error on misconfiguration.** A listed dir that *does* exist but is not a distinct git repo, or lacks its own `.reviewer/settings.json`, blocks the hook -- so a dir that is really there can never silently go unreviewed.
+- **Hard error on misconfiguration.** A listed dir that *does* exist but is not a distinct git repo, is not the toplevel of its own repo, or lacks its own `.reviewer/settings.json`, blocks the hook -- so a dir that is really there can never silently go unreviewed.
 - **Global vs. per-dir.** `stop_hook.enabled_when` (master switch) is read once from the root config; the conversation-review gate is session-scoped and runs once at the root. Everything else (base branch, remote, autofix/architecture/CI, uncommitted enforcement, docs-only skip) is per-dir.
 - **Unified review gates.** There is one `/autofix` and one `/verify-architecture` per stop cycle covering all dirs -- not one per dir. Each spawns a **single** review sub-agent that holds every reviewed repo's full diff at once and reviews them together, so cross-repo coupling (e.g. one repo consuming an interface another repo changed) is caught natively; fixes land in whichever repo the issue lives in. Each dir keeps its own dir-local markers, so a gate is satisfied only when every changed dir has a current marker. Because the invocation is unified, each changed dir's own `autofix.append_to_prompt` / `verify_architecture.append_to_prompt` is folded (deduped) into the single command hint -- a secondary dir's extra instructions are not dropped. (`verify_conversation.append_to_prompt` stays root-only, since conversation review is root-scoped.)
 - **Toggling a dir's gates.** The per-gate toggle skills (`reviewer-autofix-*`, `reviewer-ci-*`, `reviewer-verify-architecture-*`) accept an optional directory argument to target that dir's `.reviewer/settings.local.json`; without one they edit the root's.
