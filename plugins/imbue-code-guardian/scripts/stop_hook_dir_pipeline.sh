@@ -91,9 +91,19 @@ _dir_err() { echo "[$DIR] $*" >&2; }
 REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_committed" "true")
 
 if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
-    untracked=$(_git ls-files --others --exclude-standard)
-    staged=$(_git diff --cached --name-only)
-    unstaged=$(_git diff --name-only)
+    # Paths whose uncommitted changes are expected machine-generated state
+    # (e.g. a vendored subtree a dev loop rsyncs into the working tree).
+    # Excluded from the clean-tree check only; committed changes under these
+    # paths are still diffed, reviewed, and pushed like any others.
+    EXEMPT_PATHSPECS=()
+    while IFS= read -r _p; do
+        [ -z "$_p" ] && continue
+        EXEMPT_PATHSPECS+=(":(exclude)$_p")
+    done < <(read_json_array "$REVIEWER_SETTINGS" "stop_hook.uncommitted_exempt_paths")
+
+    untracked=$(_git ls-files --others --exclude-standard -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
+    staged=$(_git diff --cached --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
+    unstaged=$(_git diff --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
 
     if [[ -n "$untracked" ]] || [[ -n "$staged" ]] || [[ -n "$unstaged" ]]; then
         _dir_err "ERROR: Uncommitted changes detected. All changes must be committed before this hook can run."
@@ -124,7 +134,17 @@ fi
 # =========================================================================
 # Step 4: Fetch and merge base branch
 # =========================================================================
-BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
+# The base-branch env override (CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH) is
+# per-agent config for the agent's OWN repo -- e.g. mngr exports the agent's
+# base branch for every agent it creates. A secondary dir's base branch is its
+# own settings' concern (each reviewed repo is self-contained), so blank the
+# override for non-root dirs; read_json_config treats an empty env var as
+# unset and falls through to the dir's settings(.local).json.
+if [[ "$DIR" == "." ]]; then
+    BASE_BRANCH=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
+else
+    BASE_BRANCH=$(CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH="" read_json_config "$REVIEWER_SETTINGS" "stop_hook.base_branch" "main")
+fi
 REMOTE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.remote" "origin")
 FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_merge" "true")
 

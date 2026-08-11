@@ -12,9 +12,16 @@
 #   1. Backward-compat: root-only, changes, no markers -> block (classic report)
 #   2. Secondary-only changes -> block, dir-tagged unified report (the bug fix)
 #   3. All markers present -> pass (exit 0)
-#   4/5/6. Misconfigured additional dir (missing / non-repo / no settings) -> hard error
+#   4. Absent additional dir -> skipped, root still reviewed
+#   5/6. Misconfigured additional dir (non-repo / no settings) -> hard error
 #   7. Uncommitted changes in a secondary dir -> block, dir-tagged
 #   8. Composite stuck hatch -> lets through after N identical-state blocks
+#   9. Secondary dir's append_to_prompt flows into the unified command
+#   10. Anchors to CLAUDE_PROJECT_DIR when CWD is inside a secondary dir
+#   11. uncommitted_exempt_paths: exempt subtree dirt passes, other dirt blocks
+#   12. Stray settings nested in a larger repo's tree -> hook skips, no action
+#   13. Additional dir that is a subdir inside another repo -> hard error
+#   14. Root-scoped base-branch env override does not leak into a secondary dir
 
 set -uo pipefail
 
@@ -133,8 +140,11 @@ mark_convo_root() { # <root>
 }
 
 # Run the orchestrator with CWD=<root>; capture stderr to <errfile>; echo exit code.
+# CLAUDE_PROJECT_DIR is unset: it leaks in when the tests run inside a Claude
+# Code session, and the orchestrator's anchor would then aim every scenario at
+# the developer's real repo instead of the scenario's temp repo.
 run_hook() { # <root> <errfile>
-    ( cd "$1" && bash "$ORCH" </dev/null 2>"$2" >/dev/null ); echo $?
+    ( cd "$1" && env -u CLAUDE_PROJECT_DIR bash "$ORCH" </dev/null 2>"$2" >/dev/null ); echo $?
 }
 
 # Run the orchestrator the way Claude Code does when the agent has cd'd
@@ -181,12 +191,19 @@ E3="$WORK/s3.err"; rc=$(run_hook "$R2" "$E3")
 assert_exit 0 "$rc" "passes once every changed dir is marked"
 
 # ===========================================================================
-echo "Scenario 4: additional dir does not exist -> hard error"
+echo "Scenario 4: additional dir does not exist -> skipped, root still reviewed"
 R4="$WORK/s4/root"; make_repo "$R4"
 write_root_settings "$R4" '["ghost"]'; write_gitignore "$R4"; commit_push "$R4"
+add_feature_change "$R4" feature/v
 E4="$WORK/s4.err"; rc=$(run_hook "$R4" "$E4")
-assert_exit 2 "$rc" "blocks"
-assert_has "$E4" "does not exist" "explains missing dir"
+assert_exit 2 "$rc" "blocks on the root's own gates"
+assert_has "$E4" "autofix (/autofix)" "reports the root's autofix gate"
+assert_not "$E4" "ghost" "absent dir is not mentioned"
+assert_not "$E4" "needed in:" "absent dir is dropped from the reviewed set"
+# ...and once the root's markers are in place, the absent dir doesn't hold it back.
+mark_autofix "$R4"; mark_arch "$R4"; mark_convo_root "$R4"
+rc=$(run_hook "$R4" "$WORK/s4b.err")
+assert_exit 0 "$rc" "passes with only the root marked"
 
 # ===========================================================================
 echo "Scenario 5: additional dir shares the root repo (not distinct) -> hard error"
@@ -279,6 +296,80 @@ add_feature_change "$N10" feature/anchored
 E10="$WORK/s10.err"; rc=$(run_hook_from "$N10" "$R10" "$E10")
 assert_exit 2 "$rc" "still blocks when CWD is the secondary dir"
 assert_has "$E10" "needed in: nested" "still attributes the change to the nested dir"
+
+# ===========================================================================
+echo "Scenario 11: uncommitted_exempt_paths -- exempt subtree dirt passes, other dirt blocks"
+R11="$WORK/s11/root"; make_repo "$R11"
+mkdir -p "$R11/vendor/mngr"
+printf 'lib = 1\n' > "$R11/vendor/mngr/lib.py"
+write_root_settings "$R11" '[]'
+jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"]' "$R11/.reviewer/settings.json" > "$R11/.reviewer/settings.json.tmp" \
+    && mv "$R11/.reviewer/settings.json.tmp" "$R11/.reviewer/settings.json"
+write_gitignore "$R11"; commit_push "$R11"
+# Dirty the exempt subtree both ways: modify a tracked file, add an untracked one.
+printf 'lib = 2\n' > "$R11/vendor/mngr/lib.py"
+echo new > "$R11/vendor/mngr/generated.py"
+E11="$WORK/s11.err"; rc=$(run_hook "$R11" "$E11")
+assert_exit 0 "$rc" "passes with only exempt-path dirt (root on main, nothing to review)"
+# Dirt OUTSIDE the exempt path still blocks, and the report doesn't name exempt files.
+echo stray > "$R11/stray.py"
+rc=$(run_hook "$R11" "$E11")
+assert_exit 2 "$rc" "blocks on non-exempt dirt"
+assert_has "$E11" "stray.py" "reports the non-exempt file"
+assert_not "$E11" "generated.py" "exempt file is not listed"
+
+# ===========================================================================
+# Mirror of the vendored-copy incident: a repo's tree contains a nested copy of
+# another repo that ships its own .reviewer/settings.json (no .git of its own).
+# If the hook lands there (cwd fallback, no CLAUDE_PROJECT_DIR), bare git
+# resolves to the ENCLOSING repo while the config came from the subtree. The
+# hook must skip -- not run that config against the enclosing repo.
+echo "Scenario 12: stray settings nested in a larger repo's tree -> hook skips"
+R12="$WORK/s12/root"; make_repo "$R12"
+mkdir -p "$R12/vendor/inner/.reviewer"
+cat > "$R12/vendor/inner/.reviewer/settings.json" <<'EOF'
+{
+  "stop_hook": { "enabled_when": "true", "base_branch": "main", "fetch_and_merge": false, "require_committed": true },
+  "ci": { "is_enabled": false }
+}
+EOF
+write_gitignore "$R12"; commit_push "$R12"
+# Dirty the enclosing repo: pre-invariant, the subtree's config would block on this.
+echo dirty > "$R12/uncommitted.py"
+E12="$WORK/s12.err"; rc=$(run_hook "$R12/vendor/inner" "$E12")
+assert_exit 0 "$rc" "skips when the settings dir is not the repo toplevel"
+assert_not "$E12" "Uncommitted changes detected" "takes no action on the enclosing repo"
+
+# ===========================================================================
+echo "Scenario 13: additional dir that is a subdir inside another repo -> hard error"
+R13="$WORK/s13/root"; N13="$R13/nested"; make_repo "$R13"
+write_root_settings "$R13" '["nested/sub"]'; write_gitignore "$R13" "nested/"; commit_push "$R13"
+make_repo "$N13"
+write_secondary_settings "$N13"; write_gitignore "$N13"; commit_push "$N13"
+# The entry points INSIDE the nested repo, at a subdir carrying its own settings.
+mkdir -p "$N13/sub/.reviewer"
+cp "$N13/.reviewer/settings.json" "$N13/sub/.reviewer/settings.json"
+E13="$WORK/s13.err"; rc=$(run_hook "$R13" "$E13")
+assert_exit 2 "$rc" "blocks"
+assert_has "$E13" "not the toplevel" "rejects a non-toplevel additional dir"
+
+# ===========================================================================
+# The CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH env override is per-agent config for
+# the agent's OWN repo (e.g. mngr exports the agent's base branch). A secondary
+# dir's base branch comes from its own settings. If the override leaked in, the
+# nested dir would be diffed against a branch that doesn't exist there -- an
+# empty-looking diff that silently drops the dir from review.
+echo "Scenario 14: root-scoped base-branch env override does not leak into a secondary dir"
+R14="$WORK/s14/root"; N14="$R14/nested"; make_repo "$R14"
+write_root_settings "$R14" '["nested"]'; write_gitignore "$R14" "nested/"; commit_push "$R14"
+make_repo "$N14"
+write_secondary_settings "$N14"; write_gitignore "$N14"; commit_push "$N14"
+add_feature_change "$N14" feature/envleak
+# root stays clean on main -> only the nested dir has changes
+E14="$WORK/s14.err"
+rc=$(CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH="agent-base-branch" run_hook "$R14" "$E14")
+assert_exit 2 "$rc" "still blocks on the nested dir's changes"
+assert_has "$E14" "needed in: nested" "nested dir reviewed against its own base branch"
 
 # ===========================================================================
 echo ""

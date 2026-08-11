@@ -12,7 +12,7 @@ This command runs **once per stop cycle** and covers **every reviewed directory*
 
 ## Phase 0: Determine the target directories
 
-1. Read `.reviewer/settings.json` (and `.reviewer/settings.local.json` if present). Collect `stop_hook.additional_git_directories` (may be empty). The **target directories** are `.` (root) followed by each additional dir.
+1. Read `.reviewer/settings.json` (and `.reviewer/settings.local.json` if present). Collect `stop_hook.additional_git_directories` (may be empty), dropping any entry that does not exist on disk -- the list is shared config, and a nested repo is only present in the checkouts working on it. The **target directories** are `.` (root) followed by each remaining additional dir.
 2. For each target dir `{dir}`, read its base branch from `{dir}/.reviewer/settings.json` (`stop_hook.base_branch`; fall back to `${GIT_BASE_BRANCH:-main}` for the root). Determine whether it has reviewable changes: `git -C {dir} diff --name-only {base}...HEAD` shows at least one non-`.md` file.
 3. Keep only the target dirs with reviewable changes -- the **review set**.
 
