@@ -90,17 +90,22 @@ _dir_err() { echo "[$DIR] $*" >&2; }
 # =========================================================================
 REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_committed" "true")
 
-if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
-    # Paths whose uncommitted changes are expected machine-generated state
-    # (e.g. a vendored subtree a dev loop rsyncs into the working tree).
-    # Excluded from the clean-tree check only; committed changes under these
-    # paths are still diffed, reviewed, and pushed like any others.
-    EXEMPT_PATHSPECS=()
-    while IFS= read -r _p; do
-        [ -z "$_p" ] && continue
-        EXEMPT_PATHSPECS+=(":(exclude)$_p")
-    done < <(read_json_array "$REVIEWER_SETTINGS" "stop_hook.uncommitted_exempt_paths")
+# Paths whose uncommitted changes are expected machine-generated state
+# (e.g. a vendored subtree a dev loop rsyncs into the working tree).
+# Excluded from the clean-tree check below; committed changes under these
+# paths are still diffed, reviewed, and pushed like any others. Read outside
+# that check because step 4 needs them too: git refuses to merge over a dirty
+# working tree whatever this check was told to ignore, so the same generated
+# state would otherwise block every base-branch merge.
+EXEMPT_PATHS=()
+EXEMPT_PATHSPECS=()
+while IFS= read -r _p; do
+    [ -z "$_p" ] && continue
+    EXEMPT_PATHS+=("$_p")
+    EXEMPT_PATHSPECS+=(":(exclude)$_p")
+done < <(read_json_array "$REVIEWER_SETTINGS" "stop_hook.uncommitted_exempt_paths")
 
+if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
     untracked=$(_git ls-files --others --exclude-standard -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
     staged=$(_git diff --cached --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
     unstaged=$(_git diff --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
@@ -151,6 +156,25 @@ FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_mer
 if [[ "$FETCH_AND_MERGE" == "true" ]]; then
     _log_to_file "INFO" "Fetching all remotes in $DIR (base_branch=$BASE_BRANCH, remote=$REMOTE)"
     _git fetch --all
+
+    # Reset the exempt paths to HEAD before merging. Git refuses to merge when
+    # the working tree holds changes the merge would overwrite, no matter what
+    # the clean-tree check above was told to ignore -- and the base branch is
+    # the very place machine-generated state gets updated, so that collision is
+    # the norm rather than the exception. Left alone it blocks the merge
+    # permanently, and the dir silently never takes on base-branch changes at
+    # all. Declaring a path exempt asserts its contents are generated and
+    # reproducible, which is the licence to drop them here.
+    #
+    # Only exempt paths are touched. Anything dirty outside them has already
+    # failed the check above (where it is enabled) and still blocks the merge
+    # loudly, as it should.
+    for _p in ${EXEMPT_PATHS[@]+"${EXEMPT_PATHS[@]}"}; do
+        [ -n "$(_git status --porcelain -- "$_p")" ] || continue
+        _log_to_file "INFO" "Resetting exempt path '$_p' to HEAD so $BASE_BRANCH can merge in $DIR"
+        _git checkout HEAD -- "$_p" 2>/dev/null || true
+        _git clean -fdq -- "$_p" 2>/dev/null || true
+    done
 
     # Push base branch if it doesn't exist on the remote yet
     if ! _git rev-parse --verify "$REMOTE/$BASE_BRANCH" >/dev/null 2>&1; then
