@@ -22,8 +22,9 @@
 #   12. Stray settings nested in a larger repo's tree -> hook skips, no action
 #   13. Additional dir that is a subdir inside another repo -> hard error
 #   14. Root-scoped base-branch env override does not leak into a secondary dir
-#   15. Exempt-path dirt does not block the base-branch merge
-#   16. Non-exempt dirt still blocks the merge (the exemption is not blanket)
+#   15. Merge blocked by exempt-path dirt -> distinct error, state left intact
+#   16. Merge blocked by non-exempt dirt -> the generic conflict error
+#   17. Exempt-path dirt the merge does not touch -> merge proceeds untouched
 
 set -uo pipefail
 
@@ -374,12 +375,14 @@ assert_exit 2 "$rc" "still blocks on the nested dir's changes"
 assert_has "$E14" "needed in: nested" "nested dir reviewed against its own base branch"
 
 # ===========================================================================
-# The base branch is the very place machine-generated state gets updated, so a
-# dev loop's copy of it collides with the incoming merge as a matter of course.
-# Git refuses to merge over a dirty tree regardless of what the clean-tree check
-# was told to ignore, so before this the exempt subtree blocked the merge every
-# time -- and the dir could never take on base-branch changes at all.
-echo "Scenario 15: exempt-path dirt does not block the base-branch merge"
+# Exempting a path from the clean-tree check does not exempt it from git, which
+# refuses to merge over working-tree state the merge would overwrite -- and the
+# base branch is the very place machine-generated state gets updated, so this
+# collision is routine. The hook must name it as its own failure rather than
+# report a merge conflict that isn't one, and must NOT resolve it by discarding
+# the state: only the repo knows how to regenerate it, and a dev loop's live
+# working copy would be silently lost.
+echo "Scenario 15: merge blocked by exempt-path dirt -> distinct error, state intact"
 R15="$WORK/s15/root"; make_repo "$R15"
 mkdir -p "$R15/vendor/mngr"
 printf 'lib = 1\n' > "$R15/vendor/mngr/lib.py"
@@ -388,35 +391,46 @@ jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and
     "$R15/.reviewer/settings.json" > "$R15/.reviewer/settings.json.tmp" \
     && mv "$R15/.reviewer/settings.json.tmp" "$R15/.reviewer/settings.json"
 write_gitignore "$R15"; commit_push "$R15"
-# origin/main advances, touching BOTH the exempt subtree and ordinary code.
+# origin/main advances, touching the exempt subtree -- both by editing a file
+# already there and by adding one the dev loop also generates.
 C15="$WORK/s15/clone"; git clone -q "$(_gitq "$R15" remote get-url origin)" "$C15"
 printf 'lib = 99  # from main\n' > "$C15/vendor/mngr/lib.py"
-printf 'x = 3  # from main\n' > "$C15/code.py"
+printf 'gen = 99  # from main\n' > "$C15/vendor/mngr/generated.py"
 _gitq "$C15" add -A; _gitq "$C15" commit -q -m "advance main"; _gitq "$C15" push -q origin main
 # The local dev loop has rewritten the exempt subtree (tracked + untracked).
 printf 'lib = 2  # local rsync\n' > "$R15/vendor/mngr/lib.py"
 echo generated > "$R15/vendor/mngr/generated.py"
 E15="$WORK/s15.err"; rc=$(run_hook "$R15" "$E15")
-assert_exit 0 "$rc" "merge proceeds despite exempt-path dirt"
-# The merge actually landed -- both ordinary code and the exempt subtree now
-# carry the base branch's content, rather than the merge being silently skipped.
-assert_has "$R15/code.py" "from main" "base-branch change to ordinary code landed"
-assert_has "$R15/vendor/mngr/lib.py" "from main" "base-branch change to the exempt subtree landed"
-# Dropping generated state is recorded in the dir's own log, not on stderr:
-# the orchestrator only relays a dir's stderr when that dir FAILS, so a message
-# emitted here would never reach anyone.
-assert_has "$R15/.reviewer/logs/stop_hook.jsonl" "Resetting exempt path 'vendor/mngr'" "records the reset in the dir log"
+assert_exit 2 "$rc" "blocks rather than merging over the generated state"
+assert_has "$E15" "Merge blocked by uncommitted changes under an exempt path" "reports the exempt-path cause"
+assert_has "$E15" "vendor/mngr/lib.py" "names the blocking file"
+assert_not "$E15" "Merge conflict detected" "not reported as a merge conflict"
+# The whole point: the live working state survives for the repo to regenerate.
+assert_has "$R15/vendor/mngr/lib.py" "local rsync" "the local copy is left untouched"
 if [[ -e "$R15/vendor/mngr/generated.py" ]]; then
-    _bad "untracked exempt file cleared"
+    _ok "untracked exempt file left in place"
 else
-    _ok "untracked exempt file cleared"
+    _bad "untracked exempt file left in place"
 fi
+# Restoring only the tracked file leaves the generated UNTRACKED file colliding
+# with a file main now adds -- git's other refusal, which must classify the same
+# way. This is the likelier real case: a dev loop generates files that a later
+# base-branch sync then commits.
+_gitq "$R15" checkout -q HEAD -- vendor/mngr
+E15b="$WORK/s15b.err"; rc=$(run_hook "$R15" "$E15b")
+assert_exit 2 "$rc" "an untracked exempt collision blocks too"
+assert_has "$E15b" "Merge blocked by uncommitted changes under an exempt path" "untracked collision gets the same cause"
+assert_has "$E15b" "vendor/mngr/generated.py" "names the untracked blocking file"
+# Once the generated state is dropped (what the message asks for), the merge lands.
+rm -f "$R15/vendor/mngr/generated.py"
+rc=$(run_hook "$R15" "$WORK/s15c.err")
+assert_exit 0 "$rc" "merge lands after the generated state is dropped"
+assert_has "$R15/vendor/mngr/lib.py" "from main" "base-branch change to the exempt subtree landed"
 
 # ===========================================================================
-# The exemption is a licence to drop generated state, not a licence to drop
-# anything: a path outside the list must still stop the merge rather than be
-# quietly reset.
-echo "Scenario 16: non-exempt dirt still blocks the merge"
+# The exempt-path message is a claim about a specific cause, not a catch-all for
+# every refused merge: dirt outside the list must still get the generic report.
+echo "Scenario 16: merge blocked by non-exempt dirt -> the generic conflict error"
 R16="$WORK/s16/root"; make_repo "$R16"
 mkdir -p "$R16/vendor/mngr"
 printf 'lib = 1\n' > "$R16/vendor/mngr/lib.py"
@@ -428,12 +442,39 @@ write_gitignore "$R16"; commit_push "$R16"
 C16="$WORK/s16/clone"; git clone -q "$(_gitq "$R16" remote get-url origin)" "$C16"
 printf 'x = 3  # from main\n' > "$C16/code.py"
 _gitq "$C16" add -A; _gitq "$C16" commit -q -m "advance main"; _gitq "$C16" push -q origin main
-# Dirty a NON-exempt file the incoming merge also touches.
+# Dirty a NON-exempt file the incoming merge also touches, alongside exempt dirt
+# -- the exempt dirt must not be enough to claim the merge was blocked by it.
 printf 'x = 2  # local edit\n' > "$R16/code.py"
+printf 'lib = 2  # local rsync\n' > "$R16/vendor/mngr/lib.py"
 E16="$WORK/s16.err"; rc=$(run_hook "$R16" "$E16")
 assert_exit 2 "$rc" "blocks on non-exempt dirt"
-assert_has "$E16" "Merge conflict detected" "reports the merge failure"
+assert_has "$E16" "Merge conflict detected" "reports the merge failure generically"
+assert_not "$E16" "Merge blocked by uncommitted changes under an exempt path" "does not misattribute it to the exempt path"
 assert_has "$R16/code.py" "local edit" "the non-exempt local edit is left untouched"
+
+# ===========================================================================
+# Git only refuses the merge when the incoming change actually touches the dirty
+# paths. When it doesn't, exempt-path dirt is a non-event and must not block --
+# nor be disturbed.
+echo "Scenario 17: exempt-path dirt the merge does not touch -> merge proceeds"
+R17="$WORK/s17/root"; make_repo "$R17"
+mkdir -p "$R17/vendor/mngr"
+printf 'lib = 1\n' > "$R17/vendor/mngr/lib.py"
+write_root_settings "$R17" '[]'
+jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and_merge = true' \
+    "$R17/.reviewer/settings.json" > "$R17/.reviewer/settings.json.tmp" \
+    && mv "$R17/.reviewer/settings.json.tmp" "$R17/.reviewer/settings.json"
+write_gitignore "$R17"; commit_push "$R17"
+# origin/main advances, touching only ordinary code.
+C17="$WORK/s17/clone"; git clone -q "$(_gitq "$R17" remote get-url origin)" "$C17"
+printf 'x = 3  # from main\n' > "$C17/code.py"
+_gitq "$C17" add -A; _gitq "$C17" commit -q -m "advance main"; _gitq "$C17" push -q origin main
+printf 'lib = 2  # local rsync\n' > "$R17/vendor/mngr/lib.py"
+echo generated > "$R17/vendor/mngr/generated.py"
+E17="$WORK/s17.err"; rc=$(run_hook "$R17" "$E17")
+assert_exit 0 "$rc" "merge proceeds with untouched exempt-path dirt"
+assert_has "$R17/code.py" "from main" "base-branch change landed"
+assert_has "$R17/vendor/mngr/lib.py" "local rsync" "the local copy is left untouched"
 
 # ===========================================================================
 echo ""

@@ -95,8 +95,8 @@ REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_com
 # Excluded from the clean-tree check below; committed changes under these
 # paths are still diffed, reviewed, and pushed like any others. Read outside
 # that check because step 4 needs them too: git refuses to merge over a dirty
-# working tree whatever this check was told to ignore, so the same generated
-# state would otherwise block every base-branch merge.
+# working tree whatever this check was told to ignore, so step 4 tells apart a
+# merge that was blocked purely by this generated state from a real conflict.
 EXEMPT_PATHS=()
 EXEMPT_PATHSPECS=()
 while IFS= read -r _p; do
@@ -153,28 +153,78 @@ fi
 REMOTE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.remote" "origin")
 FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_merge" "true")
 
+# Every path git names in a "would be overwritten by merge" refusal is, by
+# definition, dirty in the working tree -- so the exempt ones are exactly the
+# dirty paths matching the exempt pathspecs. Asking git to do the matching
+# keeps real pathspec semantics (globs, negation) rather than reimplementing
+# them with string prefixes.
+_exempt_dirty_files() {
+    # No exempt paths configured: bare `--` would match everything. (Indexed
+    # rather than ${#...[@]}, which trips `set -u` on an empty array in bash 3.2.)
+    [[ -n "${EXEMPT_PATHS[0]:-}" ]] || return 0
+    {
+        _git ls-files --modified --others --exclude-standard -- "${EXEMPT_PATHS[@]}"
+        _git diff --cached --name-only -- "${EXEMPT_PATHS[@]}"
+    } | sort -u
+}
+
+# Merge one base-branch ref, distinguishing the two ways it can fail.
+#
+# Git refuses to merge over paths whose working-tree state the merge would
+# overwrite, no matter what the clean-tree check above was told to ignore --
+# and the base branch is the very place machine-generated state gets updated,
+# so exempt paths collide as a matter of course. That refusal is not a merge
+# conflict and the generic "resolve the conflicts" advice does not fit it: the
+# fix is to drop the generated state, merge, and regenerate. Only the repo
+# knows how to regenerate, so say what is blocking and stop -- discarding it
+# here would silently strip a dev loop's working state (and, since a passing
+# dir's stderr is never relayed, do so invisibly).
+_merge_ref() { # <ref>
+    local ref="$1" out blocked exempt f
+    out=$(mktemp)
+    if _git merge "$ref" --no-edit >"$out" 2>&1; then
+        rm -f "$out"
+        return 0
+    fi
+    # Git lists the paths it refused to overwrite, one per line, tab-indented.
+    # The tab is written literally ($'...'): BSD sed does not expand \t.
+    blocked=""
+    if grep -q "would be overwritten by merge" "$out"; then
+        blocked=$(sed -n $'s/^\t//p' "$out")
+    fi
+    if [[ -n "$blocked" ]]; then
+        exempt=$(_exempt_dirty_files)
+        local all_exempt=true
+        while IFS= read -r f; do
+            grep -qxF "$f" <<< "$exempt" || all_exempt=false
+        done <<< "$blocked"
+        if [[ "$all_exempt" == "true" ]]; then
+            # Git's own advice here ("commit your changes or stash them") is the
+            # wrong fix for generated state, so it is not relayed.
+            rm -f "$out"
+            _dir_err "ERROR: Merge blocked by uncommitted changes under an exempt path while merging $ref."
+            _dir_err "ERROR: These paths are declared machine-generated (stop_hook.uncommitted_exempt_paths),"
+            _dir_err "ERROR: so this hook will not discard them for you -- it cannot know how to regenerate them."
+            _dir_err ""
+            _dir_err "Blocking the merge:"
+            while IFS= read -r f; do _dir_err "  $f"; done <<< "$blocked"
+            _dir_err ""
+            _dir_err "Discard the generated state under those paths, re-run the merge, then regenerate it."
+            _dir_err "See this repo's CLAUDE.md for how it is regenerated."
+            _log_to_file "ERROR" "Merge of $ref blocked by exempt-path dirt in $DIR, exiting with 2"
+            exit 2
+        fi
+    fi
+    cat "$out" >&2
+    rm -f "$out"
+    _dir_err "ERROR: Merge conflict detected while merging $ref."
+    _dir_err "ERROR: Please resolve the merge conflicts before continuing."
+    exit 2
+}
+
 if [[ "$FETCH_AND_MERGE" == "true" ]]; then
     _log_to_file "INFO" "Fetching all remotes in $DIR (base_branch=$BASE_BRANCH, remote=$REMOTE)"
     _git fetch --all
-
-    # Reset the exempt paths to HEAD before merging. Git refuses to merge when
-    # the working tree holds changes the merge would overwrite, no matter what
-    # the clean-tree check above was told to ignore -- and the base branch is
-    # the very place machine-generated state gets updated, so that collision is
-    # the norm rather than the exception. Left alone it blocks the merge
-    # permanently, and the dir silently never takes on base-branch changes at
-    # all. Declaring a path exempt asserts its contents are generated and
-    # reproducible, which is the licence to drop them here.
-    #
-    # Only exempt paths are touched. Anything dirty outside them has already
-    # failed the check above (where it is enabled) and still blocks the merge
-    # loudly, as it should.
-    for _p in ${EXEMPT_PATHS[@]+"${EXEMPT_PATHS[@]}"}; do
-        [ -n "$(_git status --porcelain -- "$_p")" ] || continue
-        _log_to_file "INFO" "Resetting exempt path '$_p' to HEAD so $BASE_BRANCH can merge in $DIR"
-        _git checkout HEAD -- "$_p" 2>/dev/null || true
-        _git clean -fdq -- "$_p" 2>/dev/null || true
-    done
 
     # Push base branch if it doesn't exist on the remote yet
     if ! _git rev-parse --verify "$REMOTE/$BASE_BRANCH" >/dev/null 2>&1; then
@@ -186,20 +236,12 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 
     # Merge remote base branch
     if _git rev-parse --verify "$REMOTE/$BASE_BRANCH" >/dev/null 2>&1; then
-        if ! _git merge "$REMOTE/$BASE_BRANCH" --no-edit; then
-            _dir_err "ERROR: Merge conflict detected while merging $REMOTE/$BASE_BRANCH."
-            _dir_err "ERROR: Please resolve the merge conflicts before continuing."
-            exit 2
-        fi
+        _merge_ref "$REMOTE/$BASE_BRANCH"
     fi
 
     # Merge local base branch
     if _git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
-        if ! _git merge "$BASE_BRANCH" --no-edit; then
-            _dir_err "ERROR: Merge conflict detected while merging $BASE_BRANCH."
-            _dir_err "ERROR: Please resolve the merge conflicts before continuing."
-            exit 2
-        fi
+        _merge_ref "$BASE_BRANCH"
     fi
 
     # Push merge commits (if any), setting upstream tracking
