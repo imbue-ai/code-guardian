@@ -210,7 +210,10 @@ _merge_ref() { # <ref>
             while IFS= read -r f; do _dir_err "  $f"; done <<< "$blocked"
             _dir_err ""
             _dir_err "Discard the generated state under those paths, re-run the merge, then regenerate it."
-            _dir_err "See this repo's CLAUDE.md for how it is regenerated."
+            # Don't claim the instructions live in $DIR: what generates a vendored
+            # subtree is typically the *other* checkout it was copied from, so its
+            # regeneration command lives there, not in the dir whose merge broke.
+            _dir_err "Check your project instructions for the regeneration command -- it may belong to the checkout this state is generated from, not to $DIR."
             _log_to_file "ERROR" "Merge of $ref blocked by exempt-path dirt in $DIR, exiting with 2"
             exit 2
         fi
