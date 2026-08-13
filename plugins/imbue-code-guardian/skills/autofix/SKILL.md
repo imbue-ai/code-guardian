@@ -13,7 +13,9 @@ This command runs **once per stop cycle** and covers **every reviewed directory*
 ## Phase 0: Determine the target directories
 
 1. Read `.reviewer/settings.json` (and `.reviewer/settings.local.json` if present). Collect the list `stop_hook.additional_git_directories` (may be empty), dropping any entry that does not exist on disk -- the list is shared config, and a nested repo is only present in the checkouts working on it. The **target directories** are `.` (the root repo) followed by each remaining additional dir.
-2. For each target dir `{dir}`, determine its base branch: read `stop_hook.base_branch` from `{dir}/.reviewer/settings.json` (fall back to `${GIT_BASE_BRANCH:-main}` for the root). Determine whether it has reviewable changes: `git -C {dir} diff --name-only {base}...HEAD` shows at least one non-`.md` file.
+2. For each target dir `{dir}`, determine its base branch: read `stop_hook.base_branch` from `{dir}/.reviewer/settings.local.json`, falling back to `{dir}/.reviewer/settings.json` (then to `${GIT_BASE_BRANCH:-main}` for the root). **Every** dir's settings resolve this way, not just the root's -- the local file is gitignored and wins, so reading only the committed one gives you the wrong answer whenever a worktree overrides something. Determine whether it has reviewable changes: `git -C {dir} diff --name-only {base}...HEAD` shows at least one non-`.md` file.
+
+   Do not read any dir's gate toggles (`autofix.is_enabled`, `verify_architecture.is_enabled`, `ci.is_enabled`). Which gates apply to which dir is the stop hook's decision, made in `stop_hook_gates.sh`; a dir is in the review set here purely because it has changes.
 3. Keep only the target dirs that have reviewable changes -- call this the **review set**. If a dir has no changes, drop it.
 
 If the review set is a single dir (the root, no additional dirs), everything below is exactly the classic single-repo flow with `{dir}` = `.`.
