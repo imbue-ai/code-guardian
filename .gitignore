@@ -1,7 +1,8 @@
 .claude/settings.local.json
 
-# Reviewer runtime state, written when the guardian is run against this repo
-# itself. Same two paths this repo's own test helper gitignores for the fixture
-# repos it builds (tests/test_multi_dir_stop_hook.sh, write_gitignore).
+# Reviewer state written when the guardian is run against this repo itself: the
+# two runtime dirs every reviewed repo must ignore (see the README's setup
+# notes), plus the local settings override the reviewer-* toggle skills write.
 .reviewer/outputs/
 .reviewer/logs/
+.reviewer/settings.local.json
