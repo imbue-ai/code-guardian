@@ -1,1 +1,7 @@
 .claude/settings.local.json
+
+# Reviewer runtime state, written when the guardian is run against this repo
+# itself. Same two paths this repo's own test helper gitignores for the fixture
+# repos it builds (tests/test_multi_dir_stop_hook.sh, write_gitignore).
+.reviewer/outputs/
+.reviewer/logs/
