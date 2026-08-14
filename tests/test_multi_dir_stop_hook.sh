@@ -440,6 +440,7 @@ echo "Scenario 16: merge blocked by exempt-path dirt -> distinct error, state in
 R16="$WORK/s16/root"; make_repo "$R16"
 mkdir -p "$R16/vendor/mngr"
 printf 'lib = 1\n' > "$R16/vendor/mngr/lib.py"
+printf 'acc = 1\n' > "$R16/vendor/mngr/café.py"
 write_root_settings "$R16" '[]'
 jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and_merge = true' \
     "$R16/.reviewer/settings.json" > "$R16/.reviewer/settings.json.tmp" \
@@ -450,14 +451,21 @@ write_gitignore "$R16"; commit_push "$R16"
 C16="$WORK/s16/clone"; git clone -q "$(_gitq "$R16" remote get-url origin)" "$C16"
 printf 'lib = 99  # from main\n' > "$C16/vendor/mngr/lib.py"
 printf 'gen = 99  # from main\n' > "$C16/vendor/mngr/generated.py"
+printf 'acc = 99  # from main\n' > "$C16/vendor/mngr/café.py"
 _gitq "$C16" add -A; _gitq "$C16" commit -q -m "advance main"; _gitq "$C16" push -q origin main
 # The local dev loop has rewritten the exempt subtree (tracked + untracked).
 printf 'lib = 2  # local rsync\n' > "$R16/vendor/mngr/lib.py"
 echo generated > "$R16/vendor/mngr/generated.py"
+# ...including a non-ASCII name. `git ls-files` / `git diff --name-only` C-quote
+# such a path ("vendor/mngr/caf\303\251.py") while the merge refusal prints it
+# raw, so both sides must be read in the same form or this file alone drags the
+# whole block into the generic merge-conflict report.
+printf 'acc = 2  # local rsync\n' > "$R16/vendor/mngr/café.py"
 E16="$WORK/s16.err"; rc=$(run_hook "$R16" "$E16")
 assert_exit 2 "$rc" "blocks rather than merging over the generated state"
 assert_has "$E16" "Merge blocked by uncommitted changes under an exempt path" "reports the exempt-path cause"
 assert_has "$E16" "vendor/mngr/lib.py" "names the blocking file"
+assert_has "$E16" "vendor/mngr/café.py" "names the non-ASCII blocking file, unquoted"
 assert_not "$E16" "Merge conflict detected" "not reported as a merge conflict"
 # The whole point: the live working state survives for the repo to regenerate.
 assert_has "$R16/vendor/mngr/lib.py" "local rsync" "the local copy is left untouched"

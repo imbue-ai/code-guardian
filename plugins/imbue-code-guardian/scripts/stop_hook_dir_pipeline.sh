@@ -181,9 +181,14 @@ _exempt_dirty_files() {
     # No exempt paths configured: bare `--` would match everything. (Indexed
     # rather than ${#...[@]}, which trips `set -u` on an empty array in bash 3.2.)
     [[ -n "${EXEMPT_PATHS[0]:-}" ]] || return 0
+    # core.quotePath=false: these two commands honor it and would otherwise
+    # C-quote any path with a non-ASCII byte ("vendor/mngr/caf\303\251.py"),
+    # while the merge refusal prints the same path raw -- so the caller's
+    # comparison would never match it and would misreport an exempt-path block
+    # as a merge conflict.
     {
-        _git ls-files --modified --others --exclude-standard -- "${EXEMPT_PATHS[@]}"
-        _git diff --cached --name-only -- "${EXEMPT_PATHS[@]}"
+        _git -c core.quotePath=false ls-files --modified --others --exclude-standard -- "${EXEMPT_PATHS[@]}"
+        _git -c core.quotePath=false diff --cached --name-only -- "${EXEMPT_PATHS[@]}"
     } | sort -u
 }
 
