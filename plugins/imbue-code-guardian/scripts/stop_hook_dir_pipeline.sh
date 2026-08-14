@@ -204,7 +204,7 @@ _exempt_dirty_files() {
 # here would silently strip a dev loop's working state (and, since a passing
 # dir's stderr is never relayed, do so invisibly).
 _merge_ref() { # <ref>
-    local ref="$1" out blocked exempt f
+    local ref="$1" out blocked non_exempt f
     out=$(mktemp)
     if _git merge "$ref" --no-edit >"$out" 2>&1; then
         rm -f "$out"
@@ -217,12 +217,14 @@ _merge_ref() { # <ref>
         blocked=$(sed -n $'s/^\t//p' "$out")
     fi
     if [[ -n "$blocked" ]]; then
-        exempt=$(_exempt_dirty_files)
-        local all_exempt=true
-        while IFS= read -r f; do
-            grep -qxF "$f" <<< "$exempt" || all_exempt=false
-        done <<< "$blocked"
-        if [[ "$all_exempt" == "true" ]]; then
+        # Any blocked path that is not also an exempt dirty path. A revendor of
+        # a large subtree blocks on thousands of paths, so match the whole list
+        # in one pass rather than forking a grep per line. `|| true`: grep exits
+        # 1 when nothing matches, which set -e would turn into an exit. With no
+        # exempt paths the pattern file is empty, grep -F matches nothing, and
+        # -v yields every blocked path -- i.e. not an exempt-path block.
+        non_exempt=$(grep -vxFf <(_exempt_dirty_files) <<< "$blocked" || true)
+        if [[ -z "$non_exempt" ]]; then
             # Git's own advice here ("commit your changes or stash them") is the
             # wrong fix for generated state, so it is not relayed.
             rm -f "$out"
