@@ -22,6 +22,7 @@
 #   12. Stray settings nested in a larger repo's tree -> hook skips, no action
 #   13. Additional dir that is a subdir inside another repo -> hard error
 #   14. Root-scoped base-branch env override does not leak into a secondary dir
+#   15. Detached-HEAD (pinned) checkouts are skipped entirely (no merge/push)
 
 set -uo pipefail
 
@@ -370,6 +371,59 @@ E14="$WORK/s14.err"
 rc=$(CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH="agent-base-branch" run_hook "$R14" "$E14")
 assert_exit 2 "$rc" "still blocks on the nested dir's changes"
 assert_has "$E14" "needed in: nested" "nested dir reviewed against its own base branch"
+
+# ===========================================================================
+# A detached HEAD marks a deliberately pinned checkout (a tag or exact SHA).
+# The hook must leave it entirely alone: no base-branch merge (which would
+# silently fast-forward a clean pinned checkout of an ancestor commit), no
+# push (a bare `push HEAD` refspec from a detached HEAD would mint a remote
+# branch literally named HEAD), no uncommitted-changes enforcement.
+echo "Scenario 15: detached-HEAD (pinned) checkouts are skipped entirely"
+R15="$WORK/s15/root"; make_repo "$R15"
+write_root_settings "$R15" '[]'; write_gitignore "$R15"; commit_push "$R15"
+# Enable fetch_and_merge so the detached guard (not the config) is what
+# prevents the merge.
+sed -i.bak 's/"fetch_and_merge": false/"fetch_and_merge": true/' "$R15/.reviewer/settings.json" && rm -f "$R15/.reviewer/settings.json.bak"
+_gitq "$R15" add -A; _gitq "$R15" commit -q -m "enable fetch_and_merge"; _gitq "$R15" push -q origin main
+# Pin the checkout at an ancestor of main, so an (unwanted) merge would
+# fast-forward it off the pin.
+PIN15=$(_gitq "$R15" rev-parse HEAD~1)
+_gitq "$R15" checkout -q --detach "$PIN15"
+E15="$WORK/s15.err"; rc=$(run_hook "$R15" "$E15")
+assert_exit 0 "$rc" "pinned root passes without action"
+# The skip note goes to the per-dir log (stderr of a dir that exits 0 is not
+# relayed by the orchestrator).
+assert_has "$R15/.reviewer/logs/stop_hook.jsonl" "detached HEAD (pinned checkout)" "logs the skip"
+if [[ "$(_gitq "$R15" rev-parse HEAD)" == "$PIN15" ]]; then
+    _ok "pinned HEAD not moved by a base-branch merge"
+else
+    _bad "pinned HEAD moved (was $PIN15, now $(_gitq "$R15" rev-parse HEAD))"
+fi
+if [[ -z "$(_gitq "$R15" ls-remote origin refs/heads/HEAD)" ]]; then
+    _ok "no remote branch named HEAD was created"
+else
+    _bad "a remote branch literally named HEAD was pushed"
+fi
+
+# ...and a pinned ADDITIONAL dir is skipped while the root is still reviewed.
+R15B="$WORK/s15b/root"; N15B="$R15B/nested"; make_repo "$R15B"
+write_root_settings "$R15B" '["nested"]'; write_gitignore "$R15B" "nested/"; commit_push "$R15B"
+add_feature_change "$R15B" feature/pinned-nested
+make_repo "$N15B"
+write_secondary_settings "$N15B"; write_gitignore "$N15B"; commit_push "$N15B"
+sed -i.bak 's/"fetch_and_merge": false/"fetch_and_merge": true/' "$N15B/.reviewer/settings.json" && rm -f "$N15B/.reviewer/settings.json.bak"
+_gitq "$N15B" add -A; _gitq "$N15B" commit -q -m "enable fetch_and_merge"; _gitq "$N15B" push -q origin main
+PIN15B=$(_gitq "$N15B" rev-parse HEAD~1)
+_gitq "$N15B" checkout -q --detach "$PIN15B"
+E15B="$WORK/s15b.err"; rc=$(run_hook "$R15B" "$E15B")
+assert_exit 2 "$rc" "root's own gates still block"
+assert_has "$E15B" "autofix (/autofix)" "root's autofix gate still reported"
+assert_has "$N15B/.reviewer/logs/stop_hook.jsonl" "detached HEAD (pinned checkout)" "pinned nested dir logs its skip"
+if [[ "$(_gitq "$N15B" rev-parse HEAD)" == "$PIN15B" ]]; then
+    _ok "pinned nested HEAD not moved"
+else
+    _bad "pinned nested HEAD moved (was $PIN15B, now $(_gitq "$N15B" rev-parse HEAD))"
+fi
 
 # ===========================================================================
 echo ""

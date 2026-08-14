@@ -86,6 +86,25 @@ trap '_write_result' EXIT
 _dir_err() { echo "[$DIR] $*" >&2; }
 
 # =========================================================================
+# Step 2b: Pinned (detached-HEAD) checkouts are left alone entirely
+# =========================================================================
+# A detached HEAD means the checkout is deliberately pinned to a tag or exact
+# SHA (e.g. a release checkout parked for side-by-side testing) rather than
+# being worked on: there is no branch to merge the base into, nothing to push
+# (a bare `push -u <remote> HEAD` from a detached HEAD resolves to the refspec
+# `HEAD:refs/heads/HEAD` and mints a literal branch named HEAD on the remote),
+# and no branch to open a PR from. Worse, merging the base branch into a clean
+# detached checkout of an ancestor commit silently FAST-FORWARDS it -- moving
+# the pinned files out from under whatever is using them, which is exactly
+# what a pin exists to prevent. Skip the whole pipeline for such a dir.
+if [[ "$BRANCH" == "HEAD" ]]; then
+    HAS_CHANGES=false
+    _log_to_file "INFO" "$DIR has a detached HEAD (pinned checkout) -- skipping merge/push/review pipeline"
+    _dir_err "NOTE: '$DIR' has a detached HEAD (pinned checkout); the stop hook is leaving it untouched."
+    exit 0
+fi
+
+# =========================================================================
 # Step 3: Uncommitted changes enforcement
 # =========================================================================
 REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_committed" "true")
@@ -178,8 +197,11 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
         fi
     fi
 
-    # Push merge commits (if any), setting upstream tracking
-    if ! retry_command 3 git -C "$DIR" push -u "$REMOTE" HEAD; then
+    # Push merge commits (if any), setting upstream tracking. Push the branch
+    # by name, never the bare HEAD refspec: from a detached HEAD (excluded in
+    # Step 2b, but kept structurally impossible here too) `push HEAD` would
+    # mint a remote branch literally named HEAD.
+    if ! retry_command 3 git -C "$DIR" push -u "$REMOTE" "$BRANCH"; then
         _dir_err "ERROR: Failed to push after retries. Perhaps you forgot to commit something? Or pre-commit hooks changed something?"
         exit 2
     fi
