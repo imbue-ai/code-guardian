@@ -26,6 +26,7 @@
 #   16. Merge blocked by exempt-path dirt -> distinct error, state left intact
 #   17. Merge blocked by non-exempt dirt -> the generic conflict error
 #   18. Exempt-path dirt the merge does not touch -> merge proceeds untouched
+#   19. Exempt subtree too large for git's refusal message -> still classifies
 
 set -uo pipefail
 
@@ -537,6 +538,42 @@ E18="$WORK/s18.err"; rc=$(run_hook "$R18" "$E18")
 assert_exit 0 "$rc" "merge proceeds with untouched exempt-path dirt"
 assert_has "$R18/code.py" "from main" "base-branch change landed"
 assert_has "$R18/vendor/mngr/lib.py" "local rsync" "the local copy is left untouched"
+
+# ===========================================================================
+# The real exempt subtree is a vendored monorepo -- thousands of files -- so a
+# base-branch revendor blocks on far more paths than git's refusal message can
+# hold: git formats that message into a fixed 4096-byte buffer and cuts it off
+# mid-line, leaving a path fragment as the final entry. Classification must not
+# be read out of that message, or the motivating case reports as a merge
+# conflict while the small ones (scenario 16) look fine.
+echo "Scenario 19: an exempt subtree too large for git's message still classifies"
+R19="$WORK/s19/root"; make_repo "$R19"
+mkdir -p "$R19/vendor/mngr"
+for i in $(seq 1 400); do printf 'v = 1\n' > "$R19/vendor/mngr/f$i.py"; done
+write_root_settings "$R19" '[]'
+jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and_merge = true' \
+    "$R19/.reviewer/settings.json" > "$R19/.reviewer/settings.json.tmp" \
+    && mv "$R19/.reviewer/settings.json.tmp" "$R19/.reviewer/settings.json"
+write_gitignore "$R19"; commit_push "$R19"
+# origin/main revendors the whole subtree...
+C19="$WORK/s19/clone"; git clone -q "$(_gitq "$R19" remote get-url origin)" "$C19"
+for i in $(seq 1 400); do printf 'v = 99  # from main\n' > "$C19/vendor/mngr/f$i.py"; done
+_gitq "$C19" add -A; _gitq "$C19" commit -q -m "revendor"; _gitq "$C19" push -q origin main
+# ...while the dev loop has rewritten every one of them locally.
+for i in $(seq 1 400); do printf 'v = 2  # local rsync\n' > "$R19/vendor/mngr/f$i.py"; done
+E19="$WORK/s19.err"; rc=$(run_hook "$R19" "$E19")
+assert_exit 2 "$rc" "blocks on a subtree larger than git's message buffer"
+assert_has "$E19" "Merge blocked by uncommitted changes under an exempt path" "reports the exempt-path cause"
+assert_not "$E19" "Merge conflict detected" "not reported as a merge conflict"
+assert_has "$E19" "(400 path(s))" "counts every blocked path, not just the listed sample"
+assert_has "$R19/vendor/mngr/f400.py" "local rsync" "the local copy is left untouched"
+# The whole per-dir stderr is relayed to the agent verbatim, so the listing is a
+# capped sample rather than the entire subtree.
+if [[ $(grep -c '^\[' "$E19") -lt 40 ]]; then
+    _ok "the blocked listing is capped, not one line per path"
+else
+    _bad "the blocked listing is capped, not one line per path ($(grep -c '^\[' "$E19") lines)"
+fi
 
 # ===========================================================================
 echo ""
