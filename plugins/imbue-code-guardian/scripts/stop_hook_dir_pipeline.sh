@@ -109,17 +109,22 @@ fi
 # =========================================================================
 REQUIRE_COMMITTED=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.require_committed" "true")
 
-if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
-    # Paths whose uncommitted changes are expected machine-generated state
-    # (e.g. a vendored subtree a dev loop rsyncs into the working tree).
-    # Excluded from the clean-tree check only; committed changes under these
-    # paths are still diffed, reviewed, and pushed like any others.
-    EXEMPT_PATHSPECS=()
-    while IFS= read -r _p; do
-        [ -z "$_p" ] && continue
-        EXEMPT_PATHSPECS+=(":(exclude)$_p")
-    done < <(read_json_array "$REVIEWER_SETTINGS" "stop_hook.uncommitted_exempt_paths")
+# Paths whose uncommitted changes are expected machine-generated state
+# (e.g. a vendored subtree a dev loop rsyncs into the working tree).
+# Excluded from the clean-tree check below; committed changes under these
+# paths are still diffed, reviewed, and pushed like any others. Read outside
+# that check because step 4 needs them too: git refuses to merge over a dirty
+# working tree whatever this check was told to ignore, so step 4 tells apart a
+# merge that was blocked purely by this generated state from a real conflict.
+EXEMPT_PATHS=()
+EXEMPT_PATHSPECS=()
+while IFS= read -r _p; do
+    [ -z "$_p" ] && continue
+    EXEMPT_PATHS+=("$_p")
+    EXEMPT_PATHSPECS+=(":(exclude)$_p")
+done < <(read_json_array "$REVIEWER_SETTINGS" "stop_hook.uncommitted_exempt_paths")
 
+if [[ "$REQUIRE_COMMITTED" == "true" ]]; then
     untracked=$(_git ls-files --others --exclude-standard -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
     staged=$(_git diff --cached --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
     unstaged=$(_git diff --name-only -- ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"})
@@ -167,6 +172,125 @@ fi
 REMOTE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.remote" "origin")
 FETCH_AND_MERGE=$(read_json_config "$REVIEWER_SETTINGS" "stop_hook.fetch_and_merge" "true")
 
+# Every path git names in a "would be overwritten by merge" refusal is, by
+# definition, both dirty in the working tree and written by the incoming merge
+# -- so that set is the intersection of the two, and the helpers below compute
+# it from git plumbing. It is deliberately NOT read out of the refusal message:
+# git formats that message through error()'s fixed 4096-byte buffer, so a
+# revendor of a large subtree (the case this exists for -- thousands of files)
+# arrives truncated with its last entry cut mid-path, and that fragment matches
+# no real path, dragging the whole block into the generic conflict report.
+#
+# Asking git to match the exempt pathspecs, rather than comparing string
+# prefixes here, keeps real pathspec semantics (globs, negation).
+#
+# core.quotePath=false: these commands honor it and would otherwise C-quote any
+# path with a non-ASCII byte ("vendor/mngr/caf\303\251.py"), so the two sides of
+# the comparison below would be spelled differently and never match.
+_dirty_files() { # <pathspec>...
+    {
+        _git -c core.quotePath=false ls-files --modified --others --exclude-standard -- "$@"
+        _git -c core.quotePath=false diff --cached --name-only -- "$@"
+    } | sort -u
+}
+
+_exempt_dirty_files() {
+    # No exempt paths configured: bare `--` would match everything. (Indexed
+    # rather than ${#...[@]}, which trips `set -u` on an empty array in bash 3.2.)
+    [[ -n "${EXEMPT_PATHS[0]:-}" ]] || return 0
+    _dirty_files "${EXEMPT_PATHS[@]}"
+}
+
+_non_exempt_dirty_files() {
+    # With no exempt paths this passes no pathspec, i.e. every dirty path --
+    # which is right: none of them are exempt.
+    _dirty_files ${EXEMPT_PATHSPECS[@]+"${EXEMPT_PATHSPECS[@]}"}
+}
+
+# The paths the incoming merge would write into the working tree.
+_incoming_paths() { # <ref>
+    # --no-renames so a rename contributes both its source and its destination:
+    # with rename detection on, --name-only reports only the destination, while
+    # the source is the path git would refuse to overwrite.
+    #
+    # `|| true`: git errors when there is no merge base (unrelated histories).
+    # That is not an overwrite refusal, and an empty list falls through to the
+    # generic report, which is the right outcome for it.
+    _git -c core.quotePath=false diff --name-only --no-renames "HEAD...$1" 2>/dev/null | sort -u || true
+}
+
+# Merge one base-branch ref, distinguishing the two ways it can fail.
+#
+# Git refuses to merge over paths whose working-tree state the merge would
+# overwrite, no matter what the clean-tree check above was told to ignore --
+# and the base branch is the very place machine-generated state gets updated,
+# so exempt paths collide as a matter of course. That refusal is not a merge
+# conflict and the generic "resolve the conflicts" advice does not fit it: the
+# fix is to drop the generated state, merge, and regenerate. Only the repo
+# knows how to regenerate, so say what is blocking and stop -- discarding it
+# here would silently strip a dev loop's working state (and, since a passing
+# dir's stderr is never relayed, do so invisibly).
+_merge_ref() { # <ref>
+    local ref="$1" out incoming blocked non_exempt count shown f
+    local sample=20
+    out=$(mktemp)
+    if _git merge "$ref" --no-edit >"$out" 2>&1; then
+        rm -f "$out"
+        return 0
+    fi
+    if grep -q "would be overwritten by merge" "$out"; then
+        incoming=$(mktemp)
+        _incoming_paths "$ref" > "$incoming"
+        # The dirty paths on each side of the exempt list that this merge would
+        # write. A revendor of a large subtree blocks on thousands of paths, so
+        # match each whole list in one pass rather than forking a grep per line.
+        # `|| true`: grep exits 1 when nothing matches, which set -e would turn
+        # into an exit. An empty pattern file makes grep -F match nothing, so an
+        # unrelated merge failure leaves both lists empty and falls through.
+        blocked=$(grep -xFf "$incoming" <<< "$(_exempt_dirty_files)" || true)
+        non_exempt=$(grep -xFf "$incoming" <<< "$(_non_exempt_dirty_files)" || true)
+        rm -f "$incoming"
+        # Requiring a blocked exempt path, not just the absence of a non-exempt
+        # one, keeps this from claiming any other merge failure as its own.
+        if [[ -n "$blocked" && -z "$non_exempt" ]]; then
+            # Git's own advice here ("commit your changes or stash them") is the
+            # wrong fix for generated state, so it is not relayed.
+            rm -f "$out"
+            count=$(grep -c '' <<< "$blocked")
+            _dir_err "ERROR: Merge blocked by uncommitted changes under an exempt path while merging $ref."
+            _dir_err "ERROR: These paths are declared machine-generated (stop_hook.uncommitted_exempt_paths),"
+            _dir_err "ERROR: so this hook will not discard them for you -- it cannot know how to regenerate them."
+            _dir_err ""
+            # This whole stderr is relayed to the agent verbatim, and a vendored
+            # monorepo blocks on thousands of paths, so show a sample and the
+            # total rather than the lot.
+            _dir_err "Blocking the merge ($count path(s)):"
+            shown=0
+            while IFS= read -r f; do
+                shown=$((shown + 1))
+                [[ "$shown" -le "$sample" ]] || break
+                _dir_err "  $f"
+            done <<< "$blocked"
+            if [[ "$count" -gt "$sample" ]]; then
+                _dir_err "  ... and $((count - sample)) more."
+            fi
+            _dir_err ""
+            _dir_err "Discard the generated state under those paths, re-run the merge, then regenerate it."
+            # Don't claim the instructions live in $DIR: what generates a vendored
+            # subtree is typically the *other* checkout it was copied from, so its
+            # regeneration command lives there, not in the dir whose merge broke.
+            _dir_err "Check your project instructions for the regeneration command -- it may belong to the checkout this state is generated from, not to $DIR."
+            _log_to_file "ERROR" "Merge of $ref blocked by exempt-path dirt in $DIR, exiting with 2"
+            exit 2
+        fi
+    fi
+    cat "$out" >&2
+    rm -f "$out"
+    _dir_err "ERROR: Merge conflict detected while merging $ref."
+    _dir_err "ERROR: Please resolve the merge conflicts before continuing."
+    exit 2
+}
+
 if [[ "$FETCH_AND_MERGE" == "true" ]]; then
     _log_to_file "INFO" "Fetching all remotes in $DIR (base_branch=$BASE_BRANCH, remote=$REMOTE)"
     _git fetch --all
@@ -181,20 +305,12 @@ if [[ "$FETCH_AND_MERGE" == "true" ]]; then
 
     # Merge remote base branch
     if _git rev-parse --verify "$REMOTE/$BASE_BRANCH" >/dev/null 2>&1; then
-        if ! _git merge "$REMOTE/$BASE_BRANCH" --no-edit; then
-            _dir_err "ERROR: Merge conflict detected while merging $REMOTE/$BASE_BRANCH."
-            _dir_err "ERROR: Please resolve the merge conflicts before continuing."
-            exit 2
-        fi
+        _merge_ref "$REMOTE/$BASE_BRANCH"
     fi
 
     # Merge local base branch
     if _git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
-        if ! _git merge "$BASE_BRANCH" --no-edit; then
-            _dir_err "ERROR: Merge conflict detected while merging $BASE_BRANCH."
-            _dir_err "ERROR: Please resolve the merge conflicts before continuing."
-            exit 2
-        fi
+        _merge_ref "$BASE_BRANCH"
     fi
 
     # Push merge commits (if any), setting upstream tracking. Push the branch

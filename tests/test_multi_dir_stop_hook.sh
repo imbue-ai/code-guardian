@@ -23,6 +23,10 @@
 #   13. Additional dir that is a subdir inside another repo -> hard error
 #   14. Root-scoped base-branch env override does not leak into a secondary dir
 #   15. Detached-HEAD (pinned) checkouts are skipped entirely (no merge/push)
+#   16. Merge blocked by exempt-path dirt -> distinct error, state left intact
+#   17. Merge blocked by non-exempt dirt -> the generic conflict error
+#   18. Exempt-path dirt the merge does not touch -> merge proceeds untouched
+#   19. Exempt subtree too large for git's refusal message -> still classifies
 
 set -uo pipefail
 
@@ -423,6 +427,152 @@ if [[ "$(_gitq "$N15B" rev-parse HEAD)" == "$PIN15B" ]]; then
     _ok "pinned nested HEAD not moved"
 else
     _bad "pinned nested HEAD moved (was $PIN15B, now $(_gitq "$N15B" rev-parse HEAD))"
+fi
+
+# ===========================================================================
+# Exempting a path from the clean-tree check does not exempt it from git, which
+# refuses to merge over working-tree state the merge would overwrite -- and the
+# base branch is the very place machine-generated state gets updated, so this
+# collision is routine. The hook must name it as its own failure rather than
+# report a merge conflict that isn't one, and must NOT resolve it by discarding
+# the state: only the repo knows how to regenerate it, and a dev loop's live
+# working copy would be silently lost.
+echo "Scenario 16: merge blocked by exempt-path dirt -> distinct error, state intact"
+R16="$WORK/s16/root"; make_repo "$R16"
+mkdir -p "$R16/vendor/mngr"
+printf 'lib = 1\n' > "$R16/vendor/mngr/lib.py"
+printf 'acc = 1\n' > "$R16/vendor/mngr/café.py"
+write_root_settings "$R16" '[]'
+jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and_merge = true' \
+    "$R16/.reviewer/settings.json" > "$R16/.reviewer/settings.json.tmp" \
+    && mv "$R16/.reviewer/settings.json.tmp" "$R16/.reviewer/settings.json"
+write_gitignore "$R16"; commit_push "$R16"
+# origin/main advances, touching the exempt subtree -- both by editing a file
+# already there and by adding one the dev loop also generates.
+C16="$WORK/s16/clone"; git clone -q "$(_gitq "$R16" remote get-url origin)" "$C16"
+printf 'lib = 99  # from main\n' > "$C16/vendor/mngr/lib.py"
+printf 'gen = 99  # from main\n' > "$C16/vendor/mngr/generated.py"
+printf 'acc = 99  # from main\n' > "$C16/vendor/mngr/café.py"
+_gitq "$C16" add -A; _gitq "$C16" commit -q -m "advance main"; _gitq "$C16" push -q origin main
+# The local dev loop has rewritten the exempt subtree (tracked + untracked).
+printf 'lib = 2  # local rsync\n' > "$R16/vendor/mngr/lib.py"
+echo generated > "$R16/vendor/mngr/generated.py"
+# ...including a non-ASCII name. `git ls-files` / `git diff --name-only` C-quote
+# such a path ("vendor/mngr/caf\303\251.py") while the merge refusal prints it
+# raw, so both sides must be read in the same form or this file alone drags the
+# whole block into the generic merge-conflict report.
+printf 'acc = 2  # local rsync\n' > "$R16/vendor/mngr/café.py"
+E16="$WORK/s16.err"; rc=$(run_hook "$R16" "$E16")
+assert_exit 2 "$rc" "blocks rather than merging over the generated state"
+assert_has "$E16" "Merge blocked by uncommitted changes under an exempt path" "reports the exempt-path cause"
+assert_has "$E16" "vendor/mngr/lib.py" "names the blocking file"
+assert_has "$E16" "vendor/mngr/café.py" "names the non-ASCII blocking file, unquoted"
+assert_not "$E16" "Merge conflict detected" "not reported as a merge conflict"
+# The whole point: the live working state survives for the repo to regenerate.
+assert_has "$R16/vendor/mngr/lib.py" "local rsync" "the local copy is left untouched"
+if [[ -e "$R16/vendor/mngr/generated.py" ]]; then
+    _ok "untracked exempt file left in place"
+else
+    _bad "untracked exempt file left in place"
+fi
+# Restoring only the tracked file leaves the generated UNTRACKED file colliding
+# with a file main now adds -- git's other refusal, which must classify the same
+# way. This is the likelier real case: a dev loop generates files that a later
+# base-branch sync then commits.
+_gitq "$R16" checkout -q HEAD -- vendor/mngr
+E16b="$WORK/s16b.err"; rc=$(run_hook "$R16" "$E16b")
+assert_exit 2 "$rc" "an untracked exempt collision blocks too"
+assert_has "$E16b" "Merge blocked by uncommitted changes under an exempt path" "untracked collision gets the same cause"
+assert_has "$E16b" "vendor/mngr/generated.py" "names the untracked blocking file"
+# Once the generated state is dropped (what the message asks for), the merge lands.
+rm -f "$R16/vendor/mngr/generated.py"
+rc=$(run_hook "$R16" "$WORK/s16c.err")
+assert_exit 0 "$rc" "merge lands after the generated state is dropped"
+assert_has "$R16/vendor/mngr/lib.py" "from main" "base-branch change to the exempt subtree landed"
+
+# ===========================================================================
+# The exempt-path message is a claim about a specific cause, not a catch-all for
+# every refused merge: dirt outside the list must still get the generic report.
+echo "Scenario 17: merge blocked by non-exempt dirt -> the generic conflict error"
+R17="$WORK/s17/root"; make_repo "$R17"
+mkdir -p "$R17/vendor/mngr"
+printf 'lib = 1\n' > "$R17/vendor/mngr/lib.py"
+write_root_settings "$R17" '[]'
+jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and_merge = true | .stop_hook.require_committed = false' \
+    "$R17/.reviewer/settings.json" > "$R17/.reviewer/settings.json.tmp" \
+    && mv "$R17/.reviewer/settings.json.tmp" "$R17/.reviewer/settings.json"
+write_gitignore "$R17"; commit_push "$R17"
+C17="$WORK/s17/clone"; git clone -q "$(_gitq "$R17" remote get-url origin)" "$C17"
+printf 'x = 3  # from main\n' > "$C17/code.py"
+_gitq "$C17" add -A; _gitq "$C17" commit -q -m "advance main"; _gitq "$C17" push -q origin main
+# Dirty a NON-exempt file the incoming merge also touches, alongside exempt dirt
+# -- the exempt dirt must not be enough to claim the merge was blocked by it.
+printf 'x = 2  # local edit\n' > "$R17/code.py"
+printf 'lib = 2  # local rsync\n' > "$R17/vendor/mngr/lib.py"
+E17="$WORK/s17.err"; rc=$(run_hook "$R17" "$E17")
+assert_exit 2 "$rc" "blocks on non-exempt dirt"
+assert_has "$E17" "Merge conflict detected" "reports the merge failure generically"
+assert_not "$E17" "Merge blocked by uncommitted changes under an exempt path" "does not misattribute it to the exempt path"
+assert_has "$R17/code.py" "local edit" "the non-exempt local edit is left untouched"
+
+# ===========================================================================
+# Git only refuses the merge when the incoming change actually touches the dirty
+# paths. When it doesn't, exempt-path dirt is a non-event and must not block --
+# nor be disturbed.
+echo "Scenario 18: exempt-path dirt the merge does not touch -> merge proceeds"
+R18="$WORK/s18/root"; make_repo "$R18"
+mkdir -p "$R18/vendor/mngr"
+printf 'lib = 1\n' > "$R18/vendor/mngr/lib.py"
+write_root_settings "$R18" '[]'
+jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and_merge = true' \
+    "$R18/.reviewer/settings.json" > "$R18/.reviewer/settings.json.tmp" \
+    && mv "$R18/.reviewer/settings.json.tmp" "$R18/.reviewer/settings.json"
+write_gitignore "$R18"; commit_push "$R18"
+# origin/main advances, touching only ordinary code.
+C18="$WORK/s18/clone"; git clone -q "$(_gitq "$R18" remote get-url origin)" "$C18"
+printf 'x = 3  # from main\n' > "$C18/code.py"
+_gitq "$C18" add -A; _gitq "$C18" commit -q -m "advance main"; _gitq "$C18" push -q origin main
+printf 'lib = 2  # local rsync\n' > "$R18/vendor/mngr/lib.py"
+echo generated > "$R18/vendor/mngr/generated.py"
+E18="$WORK/s18.err"; rc=$(run_hook "$R18" "$E18")
+assert_exit 0 "$rc" "merge proceeds with untouched exempt-path dirt"
+assert_has "$R18/code.py" "from main" "base-branch change landed"
+assert_has "$R18/vendor/mngr/lib.py" "local rsync" "the local copy is left untouched"
+
+# ===========================================================================
+# The real exempt subtree is a vendored monorepo -- thousands of files -- so a
+# base-branch revendor blocks on far more paths than git's refusal message can
+# hold: git formats that message into a fixed 4096-byte buffer and cuts it off
+# mid-line, leaving a path fragment as the final entry. Classification must not
+# be read out of that message, or the motivating case reports as a merge
+# conflict while the small ones (scenario 16) look fine.
+echo "Scenario 19: an exempt subtree too large for git's message still classifies"
+R19="$WORK/s19/root"; make_repo "$R19"
+mkdir -p "$R19/vendor/mngr"
+for i in $(seq 1 400); do printf 'v = 1\n' > "$R19/vendor/mngr/f$i.py"; done
+write_root_settings "$R19" '[]'
+jq '.stop_hook.uncommitted_exempt_paths = ["vendor/mngr"] | .stop_hook.fetch_and_merge = true' \
+    "$R19/.reviewer/settings.json" > "$R19/.reviewer/settings.json.tmp" \
+    && mv "$R19/.reviewer/settings.json.tmp" "$R19/.reviewer/settings.json"
+write_gitignore "$R19"; commit_push "$R19"
+# origin/main revendors the whole subtree...
+C19="$WORK/s19/clone"; git clone -q "$(_gitq "$R19" remote get-url origin)" "$C19"
+for i in $(seq 1 400); do printf 'v = 99  # from main\n' > "$C19/vendor/mngr/f$i.py"; done
+_gitq "$C19" add -A; _gitq "$C19" commit -q -m "revendor"; _gitq "$C19" push -q origin main
+# ...while the dev loop has rewritten every one of them locally.
+for i in $(seq 1 400); do printf 'v = 2  # local rsync\n' > "$R19/vendor/mngr/f$i.py"; done
+E19="$WORK/s19.err"; rc=$(run_hook "$R19" "$E19")
+assert_exit 2 "$rc" "blocks on a subtree larger than git's message buffer"
+assert_has "$E19" "Merge blocked by uncommitted changes under an exempt path" "reports the exempt-path cause"
+assert_not "$E19" "Merge conflict detected" "not reported as a merge conflict"
+assert_has "$E19" "(400 path(s))" "counts every blocked path, not just the listed sample"
+assert_has "$R19/vendor/mngr/f400.py" "local rsync" "the local copy is left untouched"
+# The whole per-dir stderr is relayed to the agent verbatim, so the listing is a
+# capped sample rather than the entire subtree.
+if [[ $(grep -c '^\[' "$E19") -lt 40 ]]; then
+    _ok "the blocked listing is capped, not one line per path"
+else
+    _bad "the blocked listing is capped, not one line per path ($(grep -c '^\[' "$E19") lines)"
 fi
 
 # ===========================================================================

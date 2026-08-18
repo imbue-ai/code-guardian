@@ -1,7 +1,7 @@
 ---
 name: verify-architecture
 description: Assess whether the approach taken on a branch is the right way to solve the problem.
-allowed-tools: Bash(git rev-parse *), Bash(git diff *), Bash(git log *), Bash(git show *), Bash(git ls-tree *), Bash(git -C * rev-parse *), Bash(git -C * diff *), Bash(git -C * log *), Bash(git -C * show *), Bash(git -C * ls-tree *), Bash(ls *), Bash(find *), Bash(grep *), Bash(echo "${GIT_BASE_BRANCH:-main}"), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Read, Write, Agent, AskUserQuestion
+allowed-tools: Bash(git rev-parse *), Bash(git diff *), Bash(git log *), Bash(git show *), Bash(git ls-tree *), Bash(git -C * rev-parse *), Bash(git -C * diff *), Bash(git -C * log *), Bash(git -C * show *), Bash(git -C * ls-tree *), Bash(ls *), Bash(find *), Bash(grep *), Bash(echo "${GIT_BASE_BRANCH:-main}"), Bash(echo "${CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH:-}"), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Read, Write, Agent, AskUserQuestion
 ---
 
 # Architecture Verification
@@ -13,7 +13,9 @@ This command runs **once per stop cycle** and covers **every reviewed directory*
 ## Phase 0: Determine the target directories
 
 1. Read `.reviewer/settings.json` (and `.reviewer/settings.local.json` if present). Collect `stop_hook.additional_git_directories` (may be empty), dropping any entry that does not exist on disk -- the list is shared config, and a nested repo is only present in the checkouts working on it. The **target directories** are `.` (root) followed by each remaining additional dir.
-2. For each target dir `{dir}`, read its base branch from `{dir}/.reviewer/settings.json` (`stop_hook.base_branch`; fall back to `${GIT_BASE_BRANCH:-main}` for the root). Determine whether it has reviewable changes: `git -C {dir} diff --name-only {base}...HEAD` shows at least one non-`.md` file.
+2. For each target dir `{dir}`, read its base branch (`stop_hook.base_branch`) using the hook's own precedence: `${CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH}` **for the root dir only**, then `{dir}/.reviewer/settings.local.json`, then `{dir}/.reviewer/settings.json`, then `main`. The env var is an agent-scoped override for the agent's own repo, so the hook blanks it for every other dir -- honoring it there would let the root's base leak into a secondary repo. **Every** dir's settings resolve through the `.local.json` sibling, not just the root's: that file is gitignored and wins, so reading only the committed one gives you the wrong answer whenever a worktree overrides something. Determine whether it has reviewable changes: `git -C {dir} diff --name-only {base}...HEAD` shows at least one non-`.md` file.
+
+   Do not read any dir's gate toggles (`autofix.is_enabled`, `verify_architecture.is_enabled`, `ci.is_enabled`). Which gates apply to which dir is the stop hook's decision, made in `stop_hook_gates.sh`; a dir is in the review set here purely because it has changes.
 3. Keep only the target dirs with reviewable changes -- the **review set**.
 
 If the review set is a single dir (the root), the flow below is exactly the classic single-repo flow with `{dir}` = `.`.
