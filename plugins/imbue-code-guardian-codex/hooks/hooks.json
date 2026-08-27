@@ -1,0 +1,12 @@
+{
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${PLUGIN_ROOT}/scripts/reviewer_stop.sh"
+        }
+      ]
+    }
+  ]
+}
