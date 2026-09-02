@@ -29,6 +29,8 @@ Verifies:
  13. A multi-line message keeps its continuation lines, indented under the tag
  14. A sender kind the filter does not recognize is resolved by record form: neutral in
      a queued command, the user in a delivered one
+ 15. The number on a line is the line the record occupies in the file, which is how the
+     reviewer reads a record back out of the raw transcript
 """
 
 import json
@@ -227,6 +229,23 @@ def _line_with(output, needle):
     return matches[0] if len(matches) == 1 else ""
 
 
+def _write_transcript(path):
+    """Write the fixture transcript and return the line each record landed on."""
+    raw_lines = []
+    line_numbers = []
+    for record in RECORDS:
+        raw_lines.append(json.dumps(record))
+        line_numbers.append(len(raw_lines))
+    path.write_text("\n".join(raw_lines) + "\n")
+    return line_numbers
+
+
+def _line_number_of(line_numbers, needle):
+    """The transcript line of the one fixture record whose JSON holds `needle`."""
+    matches = [index for index, record in enumerate(RECORDS) if needle in json.dumps(record)]
+    return line_numbers[matches[0]] if len(matches) == 1 else None
+
+
 def _as_int(text):
     """Parse a byte count, or None when the run printed something that is not one."""
     text = text.strip()
@@ -253,7 +272,8 @@ def _run(path, *flags, stdin_text=None):
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "session.jsonl"
-        path.write_text("\n".join(json.dumps(record) for record in RECORDS) + "\n")
+        line_numbers = _write_transcript(path)
+        raw_lines = path.read_text().split("\n")
 
         default = _run(path)
         _check("user turn shown", "do the thing" in default)
@@ -264,6 +284,22 @@ def main():
             "[user]\tand check the logs" in default and "irrelevant.txt" not in default,
         )
         _check("steering message shown", "[steering]\tactually, stop doing that" in default)
+
+        # A reviewer reads a record back out of the raw file by the number on its line, so
+        # the number has to be the line the record actually occupies.
+        steering_line = _line_number_of(line_numbers, "actually, stop doing that")
+        _check(
+            "the tag is prefixed with the record's line number",
+            f"L{steering_line}\t[steering]\tactually, stop doing that" in default,
+        )
+        _check(
+            "that line number finds the record in the raw file",
+            steering_line is not None and "actually, stop doing that" in raw_lines[steering_line - 1],
+        )
+        _check(
+            "the first record is on line 1",
+            "L1\t[user]\tdo the thing" in default and _line_number_of(line_numbers, "do the thing") == 1,
+        )
         _check("a long steering message is never abridged", "one long thought: " + "w" * 5000 in default)
         _check("peer message shown", "[peer-message]\theads up from your fork" in default)
         _check("task notification hidden", "subagent finished" not in default)
