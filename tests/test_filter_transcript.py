@@ -13,8 +13,8 @@ Verifies:
   4. Subagent completion notices are hidden by default, shown with --task-notifications
   5. Attachments that are not queued commands stay hidden by default, and are shown
      with their subtype under --all, including ones whose payload sits under no
-     recognized text key -- capped wherever the payload sits, so one bulky record
-     cannot swamp the output, while conversational text is never abridged
+     recognized text key -- capped under every key get_content reads, so one bulky
+     record cannot swamp the output, while conversational text is never abridged
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
   7. A record whose sender field is malformed is surfaced rather than crashing the run
   8. A record's text always comes from whatever the line is labeled as
@@ -60,9 +60,13 @@ RECORDS = [
     {"type": "attachment", "attachment": "oops"},
     # Same fallback, but a subtype whose payload is a whole file body.
     {"type": "attachment", "attachment": {"type": "nested_memory", "path": "sub/CLAUDE.md", "content": {"body": "z" * 5000}}},
-    # The bulkiest real subtypes do keep their payload under a text key. Being readable
-    # under a recognized key is no reason to escape the cap.
-    {"type": "attachment", "attachment": {"type": "skill_listing", "text": "y" * 5000}},
+    # The bulkiest real subtypes do keep their payload under a recognized key -- just not
+    # under `text`: a skill listing keeps it under `content`, an edited file under
+    # `snippet`. Between them and the reminder above, every key get_content prefers is
+    # exercised by the subtype that actually uses it. Being readable is no reason to
+    # escape the cap.
+    {"type": "attachment", "attachment": {"type": "skill_listing", "content": "y" * 5000, "skillCount": 3}},
+    {"type": "attachment", "attachment": {"type": "edited_text_file", "filename": "a.py", "snippet": "s" * 5000}},
     {
         "type": "attachment",
         "attachment": {
@@ -301,7 +305,13 @@ def main():
 
         every = _run(path, "--all")
         _check("--all includes steering", "actually, stop doing that" in every)
-        _check("--all includes other attachments", "<total_tokens>5</total_tokens>" in every)
+        # The payload has to follow the tag directly: when get_content finds no key it
+        # recognizes it dumps the whole payload as JSON, which still contains the text and
+        # so satisfies a bare substring check.
+        _check(
+            "--all includes other attachments",
+            "[attachment:total_tokens_reminder]\t<total_tokens>5</total_tokens>" in every,
+        )
         _check("--all labels the attachment subtype", "[attachment:total_tokens_reminder]" in every)
         _check(
             "--all includes an attachment with no text key",
@@ -312,8 +322,12 @@ def main():
             "[attachment:nested_memory]" in every and "...(truncated)" in every and "z" * 400 not in every,
         )
         _check(
-            "--all caps a bulky payload that does sit under a text key",
-            "[attachment:skill_listing]" in every and "y" * 400 not in every,
+            "--all caps a bulky payload that sits under `content`",
+            "[attachment:skill_listing]\ty" in every and "y" * 400 not in every,
+        )
+        _check(
+            "--all caps a bulky payload that sits under `snippet`",
+            "[attachment:edited_text_file]\ts" in every and "s" * 400 not in every,
         )
         _check("malformed attachment does not crash --all", "oops" not in every)
 
