@@ -142,7 +142,10 @@ def get_content(obj):
                 value = attachment.get(key)
                 if isinstance(value, str) and value.strip():
                     return value
-            return json.dumps({k: v for k, v in attachment.items() if k != "type"})
+            # Capped like the other renderers here: the subtypes that reach this line are
+            # the ones with bulky payloads (a whole file body, a memory file, hook output).
+            dumped = json.dumps({k: v for k, v in attachment.items() if k != "type"})
+            return dumped if len(dumped) <= 200 else dumped[:200] + " ...(truncated)"
 
     # Try message.content first (standard format)
     message = obj.get("message", {})

@@ -13,7 +13,7 @@ Verifies:
   4. Subagent completion notices are hidden by default, shown with --task-notifications
   5. Attachments that are not queued commands stay hidden by default, and are shown
      with their subtype under --all, including ones whose payload sits under no
-     recognized text key
+     recognized text key -- capped, so one bulky record cannot swamp the output
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
   7. A record whose sender field is malformed is surfaced rather than crashing the run
   8. A record's text always comes from whatever the line is labeled as
@@ -38,6 +38,8 @@ RECORDS = [
     # Several real subtypes keep nothing under a text-ish key at all; --all still owes
     # the reader the record rather than an empty line that the filter then skips.
     {"type": "attachment", "attachment": {"type": "bash_output_audience_note", "toolUseID": "toolu_abc"}},
+    # Same fallback, but a subtype whose payload is a whole file body.
+    {"type": "attachment", "attachment": {"type": "nested_memory", "path": "sub/CLAUDE.md", "content": {"body": "z" * 5000}}},
     # A record labeled `user` must render the user's own words, whatever else it carries.
     {
         "type": "user",
@@ -166,6 +168,10 @@ def main():
         _check(
             "--all includes an attachment with no text key",
             "[attachment:bash_output_audience_note]" in every and "toolu_abc" in every,
+        )
+        _check(
+            "--all caps a bulky attachment payload",
+            "[attachment:nested_memory]" in every and "...(truncated)" in every and "z" * 400 not in every,
         )
 
     print(f"\n{PASS} passed, {FAIL} failed")
