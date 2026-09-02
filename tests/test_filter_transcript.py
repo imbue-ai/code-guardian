@@ -26,6 +26,7 @@ Verifies:
      notification or another agent's message is not attributed to the user
  12. A note the harness wrote into the user's slot is tagged as such, and an `origin`
      naming a sender outranks that mark in both directions
+ 13. A multi-line message keeps its continuation lines, indented under the tag
 """
 
 import json
@@ -179,7 +180,12 @@ RECORDS = [
         "type": "assistant",
         "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": ["a", "b"]}}]},
     },
-    {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok, stopped"}]}},
+    # Most real turns run to several lines; the continuation indent and the byte count
+    # both have to hold for one.
+    {
+        "type": "assistant",
+        "message": {"role": "assistant", "content": [{"type": "text", "text": "ok, stopped\nnothing else to do"}]},
+    },
 ]
 
 PASS = 0
@@ -233,6 +239,7 @@ def main():
         default = _run(path)
         _check("user turn shown", "do the thing" in default)
         _check("assistant turn shown", "ok, stopped" in default)
+        _check("a multi-line turn indents its continuation", "\n\t\t\tnothing else to do" in default)
         _check(
             "a line's text comes from the payload it is labeled from",
             "[user]\tand check the logs" in default and "irrelevant.txt" not in default,
