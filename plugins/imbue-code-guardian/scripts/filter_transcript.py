@@ -151,7 +151,8 @@ def get_message_type(obj):
         if attachment.get("type") == "queued_command":
             return classify_queued_command(attachment)
         # Tag the subtype so --all output distinguishes e.g. hook results from file reads
-        return "attachment:%s" % attachment.get("type", "?")
+        subtype = attachment.get("type", "?")
+        return f"attachment:{subtype}"
 
     # Check nested message type
     message = obj.get("message", {})
