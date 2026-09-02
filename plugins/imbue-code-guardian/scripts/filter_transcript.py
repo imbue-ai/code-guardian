@@ -87,8 +87,8 @@ def extract_text(content):
 # Senders that `origin.kind` names positively as somebody other than the user, and the
 # tag each one gets. `human` is the user and is handled per record form; a kind that is
 # missing or unrecognized identifies nobody and must never be resolved by elimination --
-# the harness's own task notifications used to carry no `origin` at all, so "unmarked" is
-# as much the machine's signature as the user's.
+# a task notification queued mid-turn carries no `origin` at all, so "unmarked" is as much
+# the machine's signature as the user's.
 NON_USER_SENDERS = {
     "peer": "peer-message",
     "coordinator": "peer-message",
