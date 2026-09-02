@@ -54,7 +54,10 @@ RECORDS = [
     # The bulkiest real subtypes do keep their payload under a text key. Being readable
     # under a recognized key is no reason to escape the cap.
     {"type": "attachment", "attachment": {"type": "skill_listing", "text": "y" * 5000}},
-    # A record labeled `user` must render the user's own words, whatever else it carries.
+    # Synthetic: no real record carries both a `message` and an `attachment`, in either
+    # direction. It pins the gate that keeps get_content reading an attachment payload only
+    # for records the classifier also labels from one, so that the text on a line always
+    # comes from whatever that line is labeled as.
     {
         "type": "user",
         "message": {"role": "user", "content": [{"type": "text", "text": "and check the logs"}]},
@@ -212,7 +215,7 @@ def main():
         _check("user turn shown", "do the thing" in default)
         _check("assistant turn shown", "ok, stopped" in default)
         _check(
-            "user turn carrying an attachment shows the user's text",
+            "a line's text comes from the payload it is labeled from",
             "[user]\tand check the logs" in default and "irrelevant.txt" not in default,
         )
         _check("steering message shown", "[steering]\tactually, stop doing that" in default)
