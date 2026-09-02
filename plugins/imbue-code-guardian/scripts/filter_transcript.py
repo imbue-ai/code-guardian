@@ -293,7 +293,13 @@ def _compute_filtered_size(path, args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Filter and format Claude Code session transcript JSONL files.")
+    # The module docstring is the only place the default message-type set is written down,
+    # and review-conversation.md sends its reader here to learn the options, so `--help`
+    # has to carry it.
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("file", nargs="?", help="JSONL file to filter (reads stdin if omitted)")
     parser.add_argument("--tool-use", action="store_true", help="Include tool_use messages")
     parser.add_argument("--tool-results", action="store_true", help="Include tool_result messages")
