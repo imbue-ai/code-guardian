@@ -72,6 +72,24 @@ def extract_text(content):
     return ""
 
 
+# Senders that `origin.kind` names positively as somebody other than the user, and the
+# tag each one gets. `human` is the user and is handled per record form; a kind that is
+# missing or unrecognized identifies nobody and must never be resolved by elimination --
+# the harness's own task notifications used to carry no `origin` at all, so "unmarked" is
+# as much the machine's signature as the user's.
+NON_USER_SENDERS = {
+    "peer": "peer-message",
+    "coordinator": "peer-message",
+    "task-notification": "task-notification",
+}
+
+
+def get_origin_kind(record):
+    """Read the sender named by a record's (or an attachment payload's) `origin` field."""
+    origin = record.get("origin")
+    return origin.get("kind") if isinstance(origin, dict) else None
+
+
 def classify_queued_command(attachment):
     """Map a `queued_command` attachment to a message type.
 
@@ -82,22 +100,31 @@ def classify_queued_command(attachment):
     `message.content`. A reader that only walks user/assistant records drops it
     silently, which makes the assistant look like it changed course for no reason.
 
-    Who sent it is read from `origin.kind`, which states the sender positively.
-    Do not infer a human sender from the absence of other markers: the harness's own
-    task notifications carry no `origin` at all, so "unmarked" is the machine's
-    signature, not the user's. Anything that identifies no sender is reported as
-    `queued-message` -- still shown, since dropping conversational text is the worse
-    error, but never attributed to the user.
+    Anything that identifies no sender is reported as `queued-message` -- still shown,
+    since dropping conversational text is the worse error, but never attributed to the
+    user.
     """
-    origin = attachment.get("origin")
-    kind = origin.get("kind") if isinstance(origin, dict) else None
+    kind = get_origin_kind(attachment)
     if kind == "human":
         return "steering"
-    if kind == "peer":
-        return "peer-message"
+    if kind in NON_USER_SENDERS:
+        return NON_USER_SENDERS[kind]
     if attachment.get("commandMode") == "task-notification":
         return "task-notification"
     return "queued-message"
+
+
+def classify_user_record(obj):
+    """Map a record delivered in the `user` role to a message type.
+
+    The `user` role is a slot in the API conversation, not a claim about authorship:
+    subagent completion notices and messages relayed from another agent are delivered in
+    it too, and name themselves in the same top-level `origin.kind` a queued command uses.
+    Tagging those `[user]` invites a reader to hold the user answerable for text the
+    machine wrote. A record that names no sender stays `user`, since most of what the
+    user actually types carries no `origin` either.
+    """
+    return NON_USER_SENDERS.get(get_origin_kind(obj), "user")
 
 
 def get_message_type(obj):
@@ -118,12 +145,14 @@ def get_message_type(obj):
     message = obj.get("message", {})
     if isinstance(message, dict):
         role = message.get("role", "")
-        if role in ("user", "assistant"):
+        if role == "user":
+            return classify_user_record(obj)
+        if role == "assistant":
             return role
 
     # Check for content with tool_result (user turn with tool results)
     if msg_type == "user":
-        return "user"
+        return classify_user_record(obj)
 
     return msg_type
 

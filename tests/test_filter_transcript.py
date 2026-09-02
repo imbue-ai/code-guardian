@@ -20,6 +20,8 @@ Verifies:
   9. A malformed attachment is skipped rather than crashing the run
  10. --size and --total-size agree with the output they claim to measure, which is
      what the verify-conversation skill picks a model off
+ 11. A message delivered in the `user` role is tagged by the sender it names, so a
+     notification or another agent's message is not attributed to the user
 """
 
 import json
@@ -99,6 +101,30 @@ RECORDS = [
             "origin": "human",
         },
     },
+    # The same senders also deliver text in the `user` role, naming themselves in a
+    # top-level `origin` rather than inside an attachment payload.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "<task-notification>run 2 finished</task-notification>"},
+        "origin": {"kind": "task-notification"},
+        "promptSource": "system",
+    },
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "Another Claude session sent a message: rebased for you"},
+        "origin": {"kind": "peer", "from": "general-purpose"},
+    },
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "The coordinator sent a message while you were working"},
+        "origin": {"kind": "coordinator"},
+    },
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "and one more thing"},
+        "origin": {"kind": "human"},
+        "promptSource": "typed",
+    },
     {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok, stopped"}]}},
 ]
 
@@ -153,6 +179,19 @@ def main():
         )
         _check("unrelated attachment hidden", "total_tokens" not in default and "toolu_abc" not in default)
 
+        # The `user` role is a delivery slot, not a claim of authorship: the same senders
+        # that queue text mid-turn also speak in it, and must keep their own labels there.
+        _check("delivered notification hidden", "run 2 finished" not in default)
+        _check(
+            "delivered peer message not attributed to the user",
+            "[peer-message]\tAnother Claude session sent a message: rebased for you" in default,
+        )
+        _check(
+            "coordinator message not attributed to the user",
+            "[peer-message]\tThe coordinator sent a message while you were working" in default,
+        )
+        _check("a signed human turn is still the user", "[user]\tand one more thing" in default)
+
         # The steering message must land between the tool call it interrupted and the
         # reply that followed it, so a reviewer can see what prompted the change of course.
         _check(
@@ -165,6 +204,10 @@ def main():
         _check(
             "task notification carries its own tag",
             "[task-notification]\t<task-notification>subagent finished" in with_notifications,
+        )
+        _check(
+            "a delivered notification is gated by the same flag",
+            "[task-notification]\t<task-notification>run 2 finished" in with_notifications,
         )
 
         every = _run(path, "--all")
