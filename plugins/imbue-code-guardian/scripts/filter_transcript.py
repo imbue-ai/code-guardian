@@ -5,9 +5,9 @@ Reads a JSONL transcript file and outputs a filtered, human-readable view
 with line numbers. The line numbers correspond to the original JSONL file,
 so you can use `sed -n '<N>p' <file>` to get the raw JSON for any line.
 
-Default output shows user and assistant messages, plus steering messages (text
-the user or a peer agent sent mid-turn), with text content extracted. Use flags
-to include other message types.
+Default output shows user and assistant messages, plus text that arrived mid-turn
+while the assistant was working -- steering from the user, or a message from a peer
+agent. Use flags to include other message types.
 
 Usage:
     filter_transcript.py [options] <file.jsonl>
@@ -75,18 +75,28 @@ def extract_text(content):
 def classify_queued_command(attachment):
     """Map a `queued_command` attachment to a message type.
 
-    Text sent while the assistant is already working -- a steering message from the
-    user, a message from a peer agent, or a subagent completion notice -- is recorded
-    as an `attachment` record with a `queued_command` payload, NOT as a `user` message,
-    and its text lives under `attachment.prompt` rather than `message.content`. A
-    reader that only walks user/assistant records drops it silently, which makes the
-    assistant look like it changed course for no reason.
+    Text that arrives while the assistant is already working -- a steering message
+    from the user, a message from a peer agent, or a subagent completion notice -- is
+    recorded as an `attachment` record with a `queued_command` payload, NOT as a
+    `user` message, and its text lives under `attachment.prompt` rather than
+    `message.content`. A reader that only walks user/assistant records drops it
+    silently, which makes the assistant look like it changed course for no reason.
+
+    Who sent it is read from `origin.kind`, which states the sender positively.
+    Do not infer a human sender from the absence of other markers: the harness's own
+    task notifications carry no `origin` at all, so "unmarked" is the machine's
+    signature, not the user's. Anything that identifies no sender is reported as
+    `queued-message` -- still shown, since dropping conversational text is the worse
+    error, but never attributed to the user.
     """
-    if (attachment.get("origin") or {}).get("kind") == "peer":
+    kind = (attachment.get("origin") or {}).get("kind")
+    if kind == "human":
+        return "steering"
+    if kind == "peer":
         return "peer-message"
     if attachment.get("commandMode") == "task-notification":
         return "task-notification"
-    return "steering"
+    return "queued-message"
 
 
 def get_message_type(obj):
@@ -146,7 +156,7 @@ def should_include(msg_type, args):
     if args.all:
         return True
 
-    if msg_type in ("user", "assistant", "steering", "peer-message"):
+    if msg_type in ("user", "assistant", "steering", "peer-message", "queued-message"):
         return True
     if msg_type == "task-notification" and args.task_notifications:
         return True

@@ -25,7 +25,7 @@ python3 <filter_script> <file.jsonl>
 This outputs filtered, human-readable text with line numbers. By default it shows user
 and assistant messages plus steering messages.
 
-Each line is tagged with its message type. Two of them are easy to misread:
+Each line is tagged with its message type. Three of them are easy to misread:
 
 - `[steering]` -- text from the same user, sent mid-turn while the assistant was already
   working. It arrives between two tool calls rather than at a turn boundary, and is shown
@@ -33,6 +33,8 @@ Each line is tagged with its message type. Two of them are easy to misread:
   user message.
 - `[peer-message]` -- text sent by another agent or session, not by the user. Relevant
   context, but it does not carry the user's authority.
+- `[queued-message]` -- arrived the same way, but the transcript records no sender. Rare.
+  Read it as text of unknown origin, not as an instruction from the user.
 
 Subagent completion notifications arrive by the same mechanism but are machine-generated;
 they are hidden unless you pass `--task-notifications`.

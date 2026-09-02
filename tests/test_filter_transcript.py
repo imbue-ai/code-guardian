@@ -13,6 +13,7 @@ Verifies:
   4. Subagent completion notices are hidden by default, shown with --task-notifications
   5. Attachments that are not queued commands stay hidden by default, and are
      shown with their subtype under --all
+  6. A mid-turn message with no recorded sender is shown but not attributed to the user
 """
 
 import json
@@ -57,6 +58,16 @@ RECORDS = [
             "origin": {"kind": "peer", "from": "uds:/tmp/sock"},
         },
     },
+    # No `origin`, and not a task notification: sender unknown. Real sessions do not
+    # currently produce this shape, but a reader must not fill the gap with "the user".
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "message from nobody in particular",
+            "commandMode": "prompt",
+        },
+    },
     {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok, stopped"}]}},
 ]
 
@@ -92,6 +103,14 @@ def main():
         _check("steering message shown", "[steering]\tactually, stop doing that" in default)
         _check("peer message shown", "[peer-message]\theads up from your fork" in default)
         _check("task notification hidden", "subagent finished" not in default)
+
+        # Sender is read from origin.kind, never inferred from what is missing: an
+        # unsigned message is surfaced, but under its own label rather than [steering].
+        _check(
+            "unsigned message shown",
+            "[queued-message]\tmessage from nobody in particular" in default,
+        )
+        _check("unsigned message not called steering", "[steering]\tmessage from nobody" not in default)
         _check("unrelated attachment hidden", "total_tokens" not in default)
 
         # The steering message must land between the tool call it interrupted and the
@@ -103,6 +122,10 @@ def main():
 
         with_notifications = _run(path, "--task-notifications")
         _check("task notification shown with flag", "subagent finished" in with_notifications)
+        _check(
+            "task notification not called steering",
+            "[task-notification]\t<task-notification>subagent finished" in with_notifications,
+        )
 
         every = _run(path, "--all")
         _check("--all includes steering", "actually, stop doing that" in every)
