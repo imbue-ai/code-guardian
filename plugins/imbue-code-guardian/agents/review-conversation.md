@@ -29,11 +29,14 @@ Each line is tagged with its message type. Two of them are easy to misread:
 
 - `[steering]` -- text the user sent *mid-turn*, while the assistant was already working.
   It is a real user turn and carries the same weight as any other, but it arrives between
-  two tool calls rather than at a turn boundary. These are where users deliver corrections
-  and lasting guidance, so they are prime `instruction_to_save` material, and an assistant
-  that received one and carried on regardless has disobeyed a user instruction. Never treat
-  an unexplained change of course as unmotivated without checking for a `[steering]` line
-  just above it.
+  two tool calls rather than at a turn boundary. Steering is most often a correction, and a
+  later user message supersedes an earlier one: when it contradicts the original prompt, the
+  original prompt is the stale one. An assistant that changes course to follow a `[steering]`
+  line is doing what was asked, even where that leaves the opening request unfulfilled. So
+  before reporting that the assistant deviated from the task, abandoned it, or acted
+  unprompted, read the `[steering]` lines above the point where it changed course -- they
+  frequently *are* the explanation. They are also prime `instruction_to_save` material, since
+  mid-turn is where users deliver lasting guidance.
 - `[peer-message]` -- text sent by another agent or session, not by the user. Relevant
   context, but it does not carry the user's authority.
 
