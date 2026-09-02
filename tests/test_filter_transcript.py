@@ -14,6 +14,7 @@ Verifies:
   5. Attachments that are not queued commands stay hidden by default, and are
      shown with their subtype under --all
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
+  7. A record whose sender field is malformed is surfaced rather than crashing the run
 """
 
 import json
@@ -68,6 +69,18 @@ RECORDS = [
             "commandMode": "prompt",
         },
     },
+    # `origin` is a dict in every shape the harness records today. A reader of a
+    # long-lived on-disk format still cannot assume that: one unreadable record must
+    # not take the rest of the transcript down with it.
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "message with an unreadable origin",
+            "commandMode": "prompt",
+            "origin": "human",
+        },
+    },
     {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok, stopped"}]}},
 ]
 
@@ -111,6 +124,10 @@ def main():
             "[queued-message]\tmessage from nobody in particular" in default,
         )
         _check("unsigned message not called steering", "[steering]\tmessage from nobody" not in default)
+        _check(
+            "malformed origin does not crash the run",
+            "[queued-message]\tmessage with an unreadable origin" in default,
+        )
         _check("unrelated attachment hidden", "total_tokens" not in default)
 
         # The steering message must land between the tool call it interrupted and the

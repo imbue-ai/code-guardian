@@ -89,7 +89,8 @@ def classify_queued_command(attachment):
     `queued-message` -- still shown, since dropping conversational text is the worse
     error, but never attributed to the user.
     """
-    kind = (attachment.get("origin") or {}).get("kind")
+    origin = attachment.get("origin")
+    kind = origin.get("kind") if isinstance(origin, dict) else None
     if kind == "human":
         return "steering"
     if kind == "peer":
