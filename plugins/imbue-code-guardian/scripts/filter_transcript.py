@@ -69,7 +69,7 @@ def extract_text(content):
                 # Show tool result content if it's text
                 result_content = item.get("content", "")
                 if isinstance(result_content, str) and result_content.strip():
-                    parts.append(f"[tool_result] {result_content[:PREVIEW_LIMIT]}")
+                    parts.append(f"[tool_result] {_preview(result_content)}")
             elif item.get("type") == "tool_use":
                 name = item.get("name", "?")
                 inp = item.get("input", {})
@@ -77,7 +77,11 @@ def extract_text(content):
                     # Show command for Bash, file_path for Read/Write, pattern for Grep
                     detail = inp.get("command", inp.get("file_path", inp.get("pattern", "")))
                     if detail:
-                        parts.append(f"[{name}] {detail[:PREVIEW_LIMIT]}")
+                        # A tool is free to take a structured argument where these three
+                        # take a string, so render whatever is there before abridging it.
+                        if not isinstance(detail, str):
+                            detail = json.dumps(detail)
+                        parts.append(f"[{name}] {_preview(detail)}")
                     else:
                         parts.append(f"[{name}]")
                 else:

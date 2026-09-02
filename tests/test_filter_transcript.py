@@ -18,7 +18,8 @@ Verifies:
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
   7. A record whose sender field is malformed is surfaced rather than crashing the run
   8. A record's text always comes from whatever the line is labeled as
-  9. A malformed attachment is skipped rather than crashing the run
+  9. A malformed attachment is skipped rather than crashing the run, and a tool argument
+     that is not a string is rendered rather than crashed on
  10. --size and --total-size agree with the output they claim to measure, which is
      what the verify-conversation skill picks a model off
  11. A message delivered in the `user` role is tagged by the sender it names, so a
@@ -161,6 +162,16 @@ RECORDS = [
         "origin": {"kind": "human"},
         "promptSource": "typed",
     },
+    # A tool result comes back in the `user` slot. Like any other payload shown for
+    # diagnosis, a long one is abridged -- and has to say so, or it reads as the whole
+    # result.
+    {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "r" * 5000}]}},
+    # These three keys hold a string for every tool that has one, but nothing stops a tool
+    # from taking a structured argument under the same name.
+    {
+        "type": "assistant",
+        "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": ["a", "b"]}}]},
+    },
     {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok, stopped"}]}},
 ]
 
@@ -176,6 +187,12 @@ def _check(name, condition):
     else:
         print(f"  FAIL {name}")
         FAIL += 1
+
+
+def _line_with(output, needle):
+    """Return the one output line containing `needle`, or "" if there is not exactly one."""
+    matches = [line for line in output.split("\n") if needle in line]
+    return matches[0] if len(matches) == 1 else ""
 
 
 def _run(path, *flags, stdin_text=None):
@@ -202,6 +219,15 @@ def main():
         _check("a long steering message is never abridged", "one long thought: " + "w" * 5000 in default)
         _check("peer message shown", "[peer-message]\theads up from your fork" in default)
         _check("task notification hidden", "subagent finished" not in default)
+
+        # An abridged payload has to be distinguishable from a complete one, whichever
+        # kind of payload it is.
+        _check(
+            "a long tool result says that it was abridged",
+            _line_with(default, "[tool_result] ").endswith(" ...(truncated)"),
+        )
+        _check("a long tool result is capped", "r" * 400 not in default)
+        _check("a structured tool argument is rendered", '[Grep] ["a", "b"]' in default)
 
         # Sender is read from origin.kind, never inferred from what is missing: an
         # unsigned message is surfaced, but under its own label rather than [steering].
