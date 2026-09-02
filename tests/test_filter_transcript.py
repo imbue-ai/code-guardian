@@ -27,6 +27,8 @@ Verifies:
  12. A note the harness wrote into the user's slot is tagged as such, and an `origin`
      naming a sender outranks that mark in both directions
  13. A multi-line message keeps its continuation lines, indented under the tag
+ 14. A sender kind the filter does not recognize is resolved by record form: neutral in
+     a queued command, the user in a delivered one
 """
 
 import json
@@ -115,6 +117,16 @@ RECORDS = [
             "commandMode": "prompt",
         },
     },
+    # A coordinator speaks in the queued form as well as the delivered one.
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "the coordinator wants a status update",
+            "commandMode": "prompt",
+            "origin": {"kind": "coordinator"},
+        },
+    },
     # `origin` is a dict in every shape the harness records today. A reader of a
     # long-lived on-disk format still cannot assume that: one unreadable record must
     # not take the rest of the transcript down with it.
@@ -169,6 +181,13 @@ RECORDS = [
         "message": {"role": "user", "content": "and one more thing"},
         "origin": {"kind": "human"},
         "promptSource": "typed",
+    },
+    # Sidechain records name their sender `unclassified` -- a kind the filter recognizes as
+    # naming nobody. In this form that is the ordinary case, so the record stays the user's.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "look at the failing test"},
+        "origin": {"kind": "unclassified"},
     },
     # A tool result comes back in the `user` slot. Like any other payload shown for
     # diagnosis, a long one is abridged -- and has to say so, or it reads as the whole
@@ -283,6 +302,14 @@ def main():
             "[peer-message]\tThe coordinator sent a message while you were working" in default,
         )
         _check("a signed human turn is still the user", "[user]\tand one more thing" in default)
+        _check(
+            "an unrecognized sender in the user's slot stays the user",
+            "[user]\tlook at the failing test" in default,
+        )
+        _check(
+            "a queued coordinator message is a peer message",
+            "[peer-message]\tthe coordinator wants a status update" in default,
+        )
 
         # The harness writes into the user's slot too, and marks what it writes `isMeta`.
         # Those notes are shown -- a reviewer needs to see the hook feedback an assistant
