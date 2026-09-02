@@ -11,8 +11,9 @@ Verifies:
   2. Steering messages (mid-turn user text) are shown by default, in position
   3. Peer-agent messages are shown by default and labeled distinctly
   4. Subagent completion notices are hidden by default, shown with --task-notifications
-  5. Attachments that are not queued commands stay hidden by default, and are
-     shown with their subtype under --all
+  5. Attachments that are not queued commands stay hidden by default, and are shown
+     with their subtype under --all, including ones whose payload sits under no
+     recognized text key
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
   7. A record whose sender field is malformed is surfaced rather than crashing the run
   8. A record's text always comes from whatever the line is labeled as
@@ -34,6 +35,9 @@ RECORDS = [
         "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]},
     },
     {"type": "attachment", "attachment": {"type": "total_tokens_reminder", "text": "<total_tokens>5</total_tokens>"}},
+    # Several real subtypes keep nothing under a text-ish key at all; --all still owes
+    # the reader the record rather than an empty line that the filter then skips.
+    {"type": "attachment", "attachment": {"type": "bash_output_audience_note", "toolUseID": "toolu_abc"}},
     # A record labeled `user` must render the user's own words, whatever else it carries.
     {
         "type": "user",
@@ -139,7 +143,7 @@ def main():
             "malformed origin does not crash the run",
             "[queued-message]\tmessage with an unreadable origin" in default,
         )
-        _check("unrelated attachment hidden", "total_tokens" not in default)
+        _check("unrelated attachment hidden", "total_tokens" not in default and "toolu_abc" not in default)
 
         # The steering message must land between the tool call it interrupted and the
         # reply that followed it, so a reviewer can see what prompted the change of course.
@@ -159,6 +163,10 @@ def main():
         _check("--all includes steering", "actually, stop doing that" in every)
         _check("--all includes other attachments", "total_tokens" in every)
         _check("--all labels the attachment subtype", "[attachment:total_tokens_reminder]" in every)
+        _check(
+            "--all includes an attachment with no text key",
+            "[attachment:bash_output_audience_note]" in every and "toolu_abc" in every,
+        )
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0
