@@ -37,6 +37,17 @@ import argparse
 import json
 import sys
 
+# How much of a payload that is shown for diagnosis rather than read as conversation
+# (a tool result, an attachment under --all) is worth printing.
+PREVIEW_LIMIT = 200
+
+
+def _preview(text):
+    """Abridge a payload that is shown for diagnosis rather than read as conversation."""
+    if len(text) <= PREVIEW_LIMIT:
+        return text
+    return text[:PREVIEW_LIMIT] + " ...(truncated)"
+
 
 def extract_text(content):
     """Extract readable text from a message content field."""
@@ -55,7 +66,7 @@ def extract_text(content):
                 # Show tool result content if it's text
                 result_content = item.get("content", "")
                 if isinstance(result_content, str) and result_content.strip():
-                    parts.append(f"[tool_result] {result_content[:200]}")
+                    parts.append(f"[tool_result] {result_content[:PREVIEW_LIMIT]}")
             elif item.get("type") == "tool_use":
                 name = item.get("name", "?")
                 inp = item.get("input", {})
@@ -63,7 +74,7 @@ def extract_text(content):
                     # Show command for Bash, file_path for Read/Write, pattern for Grep
                     detail = inp.get("command", inp.get("file_path", inp.get("pattern", "")))
                     if detail:
-                        parts.append(f"[{name}] {detail[:200]}")
+                        parts.append(f"[{name}] {detail[:PREVIEW_LIMIT]}")
                     else:
                         parts.append(f"[{name}]")
                 else:
@@ -160,21 +171,25 @@ def get_message_type(obj):
 def get_content(obj):
     """Extract the content field from a JSONL object."""
     # Attachments carry their payload under a different key than ordinary messages, and
-    # which key varies by subtype. Fall back to the raw record so that --all, which claims
-    # to include everything, does not silently drop subtypes with no recognized text key.
-    # Read it only for records the classifier also treats as attachments, so that the text
-    # shown always comes from whatever the line is labeled as.
+    # which key varies by subtype. Read it only for records the classifier also treats as
+    # attachments, so that the text shown always comes from whatever the line is labeled as.
     if obj.get("type") == "attachment":
         attachment = obj.get("attachment")
         if isinstance(attachment, dict):
+            # A queued command is conversation and shows by default, so it is rendered
+            # whole -- real steering messages run to tens of thousands of characters and
+            # abridging one would hide what the user asked for. Every other subtype is
+            # diagnostic filler that only --all asks for, and several (a skill listing, an
+            # edited file body) are large enough that one record would swamp the output.
+            verbatim = attachment.get("type") == "queued_command"
             for key in ("prompt", "text", "snippet", "content"):
                 value = attachment.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value
-            # Capped like the other renderers here: the subtypes that reach this line are
-            # the ones with bulky payloads (a whole file body, a memory file, hook output).
+                    return value if verbatim else _preview(value)
+            # No recognized text key: dump the payload so that --all, which claims to
+            # include everything, does not lose the record to the empty-text guard.
             dumped = json.dumps({k: v for k, v in attachment.items() if k != "type"})
-            return dumped if len(dumped) <= 200 else dumped[:200] + " ...(truncated)"
+            return dumped if verbatim else _preview(dumped)
 
     # Try message.content first (standard format)
     message = obj.get("message", {})

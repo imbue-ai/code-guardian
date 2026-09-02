@@ -13,7 +13,8 @@ Verifies:
   4. Subagent completion notices are hidden by default, shown with --task-notifications
   5. Attachments that are not queued commands stay hidden by default, and are shown
      with their subtype under --all, including ones whose payload sits under no
-     recognized text key -- capped, so one bulky record cannot swamp the output
+     recognized text key -- capped wherever the payload sits, so one bulky record
+     cannot swamp the output, while conversational text is never abridged
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
   7. A record whose sender field is malformed is surfaced rather than crashing the run
   8. A record's text always comes from whatever the line is labeled as
@@ -47,6 +48,9 @@ RECORDS = [
     {"type": "attachment", "attachment": "oops"},
     # Same fallback, but a subtype whose payload is a whole file body.
     {"type": "attachment", "attachment": {"type": "nested_memory", "path": "sub/CLAUDE.md", "content": {"body": "z" * 5000}}},
+    # The bulkiest real subtypes do keep their payload under a text key. Being readable
+    # under a recognized key is no reason to escape the cap.
+    {"type": "attachment", "attachment": {"type": "skill_listing", "text": "y" * 5000}},
     # A record labeled `user` must render the user's own words, whatever else it carries.
     {
         "type": "user",
@@ -68,6 +72,17 @@ RECORDS = [
             "type": "queued_command",
             "prompt": "<task-notification>subagent finished</task-notification>",
             "commandMode": "task-notification",
+        },
+    },
+    # Steering is conversation, not filler: real ones reach tens of thousands of
+    # characters, and abridging one would hide what the user asked for.
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "one long thought: " + "w" * 5000,
+            "commandMode": "prompt",
+            "origin": {"kind": "human"},
         },
     },
     {
@@ -163,6 +178,7 @@ def main():
             "[user]\tand check the logs" in default and "irrelevant.txt" not in default,
         )
         _check("steering message shown", "[steering]\tactually, stop doing that" in default)
+        _check("a long steering message is never abridged", "one long thought: " + "w" * 5000 in default)
         _check("peer message shown", "[peer-message]\theads up from your fork" in default)
         _check("task notification hidden", "subagent finished" not in default)
 
@@ -221,6 +237,10 @@ def main():
         _check(
             "--all caps a bulky attachment payload",
             "[attachment:nested_memory]" in every and "...(truncated)" in every and "z" * 400 not in every,
+        )
+        _check(
+            "--all caps a bulky payload that does sit under a text key",
+            "[attachment:skill_listing]" in every and "y" * 400 not in every,
         )
         _check("malformed attachment does not crash --all", "oops" not in every)
 
