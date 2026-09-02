@@ -5,16 +5,17 @@ Reads a JSONL transcript file and outputs a filtered, human-readable view
 with line numbers. The line numbers correspond to the original JSONL file,
 so you can use `sed -n '<N>p' <file>` to get the raw JSON for any line.
 
-Default output shows user and assistant messages, plus text that arrived mid-turn
-while the assistant was working -- steering from the user, or a message from a peer
-agent. Use flags to include other message types.
+Default output shows user and assistant messages, including text that arrived mid-turn
+while the assistant was working: steering from the user, a message from a peer agent,
+and anything queued whose sender the transcript does not record. Machine-generated
+subagent notifications are held back. Use flags to include other message types.
 
 Usage:
     filter_transcript.py [options] <file.jsonl>
     cat <file.jsonl> | filter_transcript.py [options]
 
 Examples:
-    # Default: user, assistant and mid-turn messages, with line numbers
+    # Default: everything the user, a peer or the assistant said, with line numbers
     filter_transcript.py session.jsonl
 
     # Include tool results
