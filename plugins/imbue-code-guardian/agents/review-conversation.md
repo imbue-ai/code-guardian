@@ -23,9 +23,10 @@ python3 <filter_script> <file.jsonl>
 ```
 
 This outputs filtered, human-readable text with line numbers. By default it shows user
-and assistant messages plus steering messages.
+and assistant messages, plus messages that arrived mid-turn while the assistant was
+already working.
 
-Each line is tagged with its message type. Three of them are easy to misread:
+Each line is tagged with its message type. The three mid-turn tags are easy to misread:
 
 - `[steering]` -- text from the same user, sent mid-turn while the assistant was already
   working. It arrives between two tool calls rather than at a turn boundary, and is shown
