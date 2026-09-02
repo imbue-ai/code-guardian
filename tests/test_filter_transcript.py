@@ -16,10 +16,10 @@ Verifies:
      recognized text key -- capped under every key get_content reads, so one bulky
      record cannot swamp the output, while conversational text is never abridged
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
-  7. A record whose sender field is malformed is surfaced rather than crashing the run
+  7. A record whose sender field is malformed is surfaced under a neutral label
   8. A record's text always comes from whatever the line is labeled as
-  9. A malformed attachment is skipped rather than crashing the run, and a tool argument
-     that is not a string is rendered rather than crashed on
+  9. Every run over the fixture exits cleanly, so no malformed record crashes the
+     filter, and a tool argument that is not a string is rendered rather than sliced
  10. --size and --total-size agree with the output they claim to measure, which is
      what the verify-conversation skill picks a model off
  11. A message delivered in the `user` role is tagged by the sender it names, so a
@@ -203,10 +203,19 @@ def _line_with(output, needle):
 
 
 def _run(path, *flags, stdin_text=None):
+    """Run the filter over the fixture and return its stdout.
+
+    A crash is reported as a failed check rather than raised, so one malformed-record
+    regression does not take the rest of the suite's report down with it.
+    """
     argv = [sys.executable, str(FILTER), *flags]
     if path is not None:
         argv.append(str(path))
-    result = subprocess.run(argv, input=stdin_text, capture_output=True, text=True, check=True)
+    result = subprocess.run(argv, input=stdin_text, capture_output=True, text=True)
+    _check(
+        f"the filter survives the whole fixture with {' '.join(flags) or 'no flags'}",
+        result.returncode == 0 and not result.stderr,
+    )
     return result.stdout
 
 
@@ -244,7 +253,7 @@ def main():
         )
         _check("unsigned message not called steering", "[steering]\tmessage from nobody" not in default)
         _check(
-            "malformed origin does not crash the run",
+            "a malformed sender field names nobody",
             "[queued-message]\tmessage with an unreadable origin" in default,
         )
         _check("unrelated attachment hidden", "total_tokens" not in default and "toolu_abc" not in default)
@@ -329,7 +338,7 @@ def main():
             "--all caps a bulky payload that sits under `snippet`",
             "[attachment:edited_text_file]\ts" in every and "s" * 400 not in every,
         )
-        _check("malformed attachment does not crash --all", "oops" not in every)
+        _check("a non-dict attachment renders nothing rather than its raw value", "oops" not in every)
 
         # The verify-conversation skill picks the reviewer's model off --total-size, so the
         # count has to track the output it claims to measure -- _compute_filtered_size
