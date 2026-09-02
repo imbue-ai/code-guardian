@@ -30,7 +30,8 @@ Verifies:
  14. A sender kind the filter does not recognize is resolved by record form: neutral in
      a queued command, the user in a delivered one
  15. The number on a line is the line the record occupies in the file, which is how the
-     reviewer reads a record back out of the raw transcript
+     reviewer reads a record back out of the raw transcript, including across the blank
+     and half-written lines a live session file contains
 """
 
 import json
@@ -230,10 +231,18 @@ def _line_with(output, needle):
 
 
 def _write_transcript(path):
-    """Write the fixture transcript and return the line each record landed on."""
+    """Write the fixture transcript and return the line each record landed on.
+
+    A live session file can hold a blank line, and a line can be half-written while the
+    session is still going. Neither renders, and both still occupy a line number -- which
+    is what the reviewer reads records back by, so the fixture contains one of each.
+    """
     raw_lines = []
     line_numbers = []
-    for record in RECORDS:
+    for index, record in enumerate(RECORDS):
+        if index == 1:
+            raw_lines.append("")
+            raw_lines.append('{"type": "user", "message": {"role": "user", "content": "half-writ')
         raw_lines.append(json.dumps(record))
         line_numbers.append(len(raw_lines))
     path.write_text("\n".join(raw_lines) + "\n")
@@ -296,6 +305,7 @@ def main():
             "that line number finds the record in the raw file",
             steering_line is not None and "actually, stop doing that" in raw_lines[steering_line - 1],
         )
+        _check("a half-written record renders nothing", "half-writ" not in default)
         _check(
             "the first record is on line 1",
             "L1\t[user]\tdo the thing" in default and _line_number_of(line_numbers, "do the thing") == 1,
