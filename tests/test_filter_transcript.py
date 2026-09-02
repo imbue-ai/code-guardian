@@ -214,13 +214,14 @@ PASS = 0
 FAIL = 0
 
 
-def _check(name, condition):
+def _check(name, condition, detail=""):
+    """Record one check; `detail` is printed only when it fails, to say what went wrong."""
     global PASS, FAIL
     if condition:
         print(f"  PASS {name}")
         PASS += 1
     else:
-        print(f"  FAIL {name}")
+        print(f"  FAIL {name}" + (f" -- {detail}" if detail else ""))
         FAIL += 1
 
 
@@ -274,6 +275,7 @@ def _run(path, *flags, stdin_text=None):
     _check(
         f"the filter survives the whole fixture with {' '.join(flags) or 'no flags'}",
         result.returncode == 0 and not result.stderr,
+        f"exit {result.returncode}: {result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ''}",
     )
     return result.stdout
 
@@ -300,6 +302,7 @@ def main():
         _check(
             "the tag is prefixed with the record's line number",
             f"L{steering_line}\t[steering]\tactually, stop doing that" in default,
+            f"expected L{steering_line}, rendered: {_line_with(default, 'actually, stop doing that')}",
         )
         _check(
             "that line number finds the record in the raw file",
@@ -319,6 +322,7 @@ def main():
         _check(
             "a long tool result says that it was abridged",
             _line_with(default, "[tool_result] ").endswith(" ...(truncated)"),
+            f"rendered: {_line_with(default, '[tool_result] ')[:120]}",
         )
         _check("a long tool result is capped", "r" * 400 not in default)
         _check("a structured tool argument is rendered", '[Grep] ["a", "b"]' in default)
@@ -421,18 +425,21 @@ def main():
         _check(
             "--all caps a bulky attachment payload",
             _line_with(every, "[attachment:nested_memory]").endswith(" ...(truncated)") and "z" * 400 not in every,
+            f"rendered: {_line_with(every, '[attachment:nested_memory]')[:120]}",
         )
         _check(
             "--all caps a bulky payload that sits under `content`",
             "[attachment:skill_listing]\ty" in every
             and _line_with(every, "[attachment:skill_listing]").endswith(" ...(truncated)")
             and "y" * 400 not in every,
+            f"rendered: {_line_with(every, '[attachment:skill_listing]')[:120]}",
         )
         _check(
             "--all caps a bulky payload that sits under `snippet`",
             "[attachment:edited_text_file]\ts" in every
             and _line_with(every, "[attachment:edited_text_file]").endswith(" ...(truncated)")
             and "s" * 400 not in every,
+            f"rendered: {_line_with(every, '[attachment:edited_text_file]')[:120]}",
         )
         _check("a non-dict attachment renders nothing rather than its raw value", "oops" not in every)
 
