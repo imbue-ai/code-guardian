@@ -27,21 +27,15 @@ and assistant messages plus steering messages.
 
 Each line is tagged with its message type. Two of them are easy to misread:
 
-- `[steering]` -- text the user sent *mid-turn*, while the assistant was already working.
-  It is a real user turn and carries the same weight as any other, but it arrives between
-  two tool calls rather than at a turn boundary. Steering is most often a correction, and a
-  later user message supersedes an earlier one: when it contradicts the original prompt, the
-  original prompt is the stale one. An assistant that changes course to follow a `[steering]`
-  line is doing what was asked, even where that leaves the opening request unfulfilled. So
-  before reporting that the assistant deviated from the task, abandoned it, or acted
-  unprompted, read the `[steering]` lines above the point where it changed course -- they
-  frequently *are* the explanation. They are also prime `instruction_to_save` material, since
-  mid-turn is where users deliver lasting guidance.
+- `[steering]` -- text from the same user, sent mid-turn while the assistant was already
+  working. It arrives between two tool calls rather than at a turn boundary, and is shown
+  at the point where it arrived. It carries the same expectations and weight as any other
+  user message.
 - `[peer-message]` -- text sent by another agent or session, not by the user. Relevant
   context, but it does not carry the user's authority.
 
-Subagent completion notifications arrive by the same mechanism but are machine-generated
-noise; they are hidden unless you pass `--task-notifications`.
+Subagent completion notifications arrive by the same mechanism but are machine-generated;
+they are hidden unless you pass `--task-notifications`.
 
 If you need raw context for a specific line, use the Read tool with `offset` and `limit` parameters to read that line from the original file.
 
