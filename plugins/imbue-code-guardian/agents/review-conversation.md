@@ -43,6 +43,9 @@ tags are easy to misread:
 
 Subagent completion notifications are machine-generated; they are hidden unless you pass
 `--task-notifications` (or `--all`), whether they arrived mid-turn or as their own turn.
+They appear under a `[task-notification]` tag. `--all` additionally shows the bookkeeping
+records the harness keeps alongside the conversation, tagged `[attachment:<subtype>]` after
+the subtype each one carries, with long payloads abridged.
 
 If you need raw context for a specific line, use the Read tool with `offset` and `limit` parameters to read that line from the original file.
 
