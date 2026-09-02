@@ -15,6 +15,7 @@ Verifies:
      shown with their subtype under --all
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
   7. A record whose sender field is malformed is surfaced rather than crashing the run
+  8. A record's text always comes from whatever the line is labeled as
 """
 
 import json
@@ -33,6 +34,12 @@ RECORDS = [
         "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]},
     },
     {"type": "attachment", "attachment": {"type": "total_tokens_reminder", "text": "<total_tokens>5</total_tokens>"}},
+    # A record labeled `user` must render the user's own words, whatever else it carries.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "text", "text": "and check the logs"}]},
+        "attachment": {"type": "file", "filename": "irrelevant.txt"},
+    },
     {
         "type": "attachment",
         "attachment": {
@@ -113,6 +120,10 @@ def main():
         default = _run(path)
         _check("user turn shown", "do the thing" in default)
         _check("assistant turn shown", "ok, stopped" in default)
+        _check(
+            "user turn carrying an attachment shows the user's text",
+            "[user]\tand check the logs" in default and "irrelevant.txt" not in default,
+        )
         _check("steering message shown", "[steering]\tactually, stop doing that" in default)
         _check("peer message shown", "[peer-message]\theads up from your fork" in default)
         _check("task notification hidden", "subagent finished" not in default)

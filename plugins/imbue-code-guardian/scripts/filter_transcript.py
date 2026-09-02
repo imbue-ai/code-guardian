@@ -133,13 +133,16 @@ def get_content(obj):
     # Attachments carry their payload under a different key than ordinary messages, and
     # which key varies by subtype. Fall back to the raw record so that --all, which claims
     # to include everything, does not silently drop subtypes with no recognized text key.
-    attachment = obj.get("attachment")
-    if isinstance(attachment, dict):
-        for key in ("prompt", "text", "snippet", "content"):
-            value = attachment.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
-        return json.dumps({k: v for k, v in attachment.items() if k != "type"})
+    # Read it only for records the classifier also treats as attachments, so that the text
+    # shown always comes from whatever the line is labeled as.
+    if obj.get("type") == "attachment":
+        attachment = obj.get("attachment")
+        if isinstance(attachment, dict):
+            for key in ("prompt", "text", "snippet", "content"):
+                value = attachment.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            return json.dumps({k: v for k, v in attachment.items() if k != "type"})
 
     # Try message.content first (standard format)
     message = obj.get("message", {})
