@@ -202,6 +202,12 @@ def _line_with(output, needle):
     return matches[0] if len(matches) == 1 else ""
 
 
+def _as_int(text):
+    """Parse a byte count, or None when the run printed something that is not one."""
+    text = text.strip()
+    return int(text) if text.isdigit() else None
+
+
 def _run(path, *flags, stdin_text=None):
     """Run the filter over the fixture and return its stdout.
 
@@ -346,15 +352,22 @@ def main():
         # The verify-conversation skill picks the reviewer's model off --total-size, so the
         # count has to track the output it claims to measure -- _compute_filtered_size
         # reimplements the main loop's filtering and can drift from it.
-        size = int(_run(path, "--size").strip())
-        _check("--size counts the bytes it emits", size == len(default.encode("utf-8")))
+        size = _as_int(_run(path, "--size"))
+        _check("--size counts the bytes it emits", size is not None and size == len(default.encode("utf-8")))
         _check(
             "--total-size reads plain paths from stdin",
-            int(_run(None, "--total-size", stdin_text=f"{path}\n").strip()) == size,
+            _as_int(_run(None, "--total-size", stdin_text=f"{path}\n")) == size,
         )
         _check(
             "--total-size reads the source-tagged paths the discovery script emits",
-            int(_run(None, "--total-size", stdin_text=f"current\t{path}\n").strip()) == size,
+            _as_int(_run(None, "--total-size", stdin_text=f"current\t{path}\n")) == size,
+        )
+        # A session can be deleted between discovery and measurement, and the skill has no
+        # answer to give if one stale path aborts the whole total.
+        missing = Path(tmp) / "deleted-session.jsonl"
+        _check(
+            "--total-size skips a path it cannot read",
+            _as_int(_run(None, "--total-size", stdin_text=f"{path}\n{missing}\n")) == size,
         )
 
     print(f"\n{PASS} passed, {FAIL} failed")
