@@ -5,8 +5,9 @@ Reads a JSONL transcript file and outputs a filtered, human-readable view
 with line numbers. The line numbers correspond to the original JSONL file,
 so you can use `sed -n '<N>p' <file>` to get the raw JSON for any line.
 
-Default output shows user and assistant messages only, with text content
-extracted. Use flags to include other message types.
+Default output shows user and assistant messages, plus steering messages (text
+the user or a peer agent sent mid-turn), with text content extracted. Use flags
+to include other message types.
 
 Usage:
     filter_transcript.py [options] <file.jsonl>
@@ -18,6 +19,9 @@ Examples:
 
     # Include tool results
     filter_transcript.py --tool-results session.jsonl
+
+    # Include subagent completion notifications
+    filter_transcript.py --task-notifications session.jsonl
 
     # Include everything
     filter_transcript.py --all session.jsonl
@@ -68,10 +72,36 @@ def extract_text(content):
     return ""
 
 
+def classify_queued_command(attachment):
+    """Map a `queued_command` attachment to a message type.
+
+    Text sent while the assistant is already working -- a steering message from the
+    user, a message from a peer agent, or a subagent completion notice -- is recorded
+    as an `attachment` record with a `queued_command` payload, NOT as a `user` message,
+    and its text lives under `attachment.prompt` rather than `message.content`. A
+    reader that only walks user/assistant records drops it silently, which makes the
+    assistant look like it changed course for no reason.
+    """
+    if (attachment.get("origin") or {}).get("kind") == "peer":
+        return "peer-message"
+    if attachment.get("commandMode") == "task-notification":
+        return "task-notification"
+    return "steering"
+
+
 def get_message_type(obj):
     """Determine the message type from a JSONL object."""
     # Top-level type field
     msg_type = obj.get("type", "")
+
+    if msg_type == "attachment":
+        attachment = obj.get("attachment")
+        if not isinstance(attachment, dict):
+            return msg_type
+        if attachment.get("type") == "queued_command":
+            return classify_queued_command(attachment)
+        # Tag the subtype so --all output distinguishes e.g. hook results from file reads
+        return "attachment:%s" % attachment.get("type", "?")
 
     # Check nested message type
     message = obj.get("message", {})
@@ -89,6 +119,17 @@ def get_message_type(obj):
 
 def get_content(obj):
     """Extract the content field from a JSONL object."""
+    # Attachments carry their payload under a different key than ordinary messages, and
+    # which key varies by subtype. Fall back to the raw record so that --all, which claims
+    # to include everything, does not silently drop subtypes with no recognized text key.
+    attachment = obj.get("attachment")
+    if isinstance(attachment, dict):
+        for key in ("prompt", "text", "snippet", "content"):
+            value = attachment.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        return json.dumps({k: v for k, v in attachment.items() if k != "type"})
+
     # Try message.content first (standard format)
     message = obj.get("message", {})
     if isinstance(message, dict):
@@ -105,7 +146,9 @@ def should_include(msg_type, args):
     if args.all:
         return True
 
-    if msg_type in ("user", "assistant"):
+    if msg_type in ("user", "assistant", "steering", "peer-message"):
+        return True
+    if msg_type == "task-notification" and args.task_notifications:
         return True
     if msg_type == "tool_use" and args.tool_use:
         return True
@@ -178,6 +221,11 @@ def main():
     parser.add_argument("--thinking", action="store_true", help="Include thinking messages")
     parser.add_argument("--system", action="store_true", help="Include system messages")
     parser.add_argument("--progress", action="store_true", help="Include progress messages")
+    parser.add_argument(
+        "--task-notifications",
+        action="store_true",
+        help="Include subagent completion notifications (queued mid-turn, but machine-generated)",
+    )
     parser.add_argument("--all", action="store_true", help="Include all message types")
     parser.add_argument("--json", action="store_true", help="Output as JSON instead of formatted text")
     parser.add_argument("--no-line-numbers", action="store_true", help="Omit line numbers")

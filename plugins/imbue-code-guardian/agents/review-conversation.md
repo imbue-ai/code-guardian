@@ -22,7 +22,23 @@ A filter utility path will be provided to you when you are spawned. Run `python3
 python3 <filter_script> <file.jsonl>
 ```
 
-This outputs filtered, human-readable text with line numbers. By default it shows only user and assistant messages.
+This outputs filtered, human-readable text with line numbers. By default it shows user
+and assistant messages plus steering messages.
+
+Each line is tagged with its message type. Two of them are easy to misread:
+
+- `[steering]` -- text the user sent *mid-turn*, while the assistant was already working.
+  It is a real user turn and carries the same weight as any other, but it arrives between
+  two tool calls rather than at a turn boundary. These are where users deliver corrections
+  and lasting guidance, so they are prime `instruction_to_save` material, and an assistant
+  that received one and carried on regardless has disobeyed a user instruction. Never treat
+  an unexplained change of course as unmotivated without checking for a `[steering]` line
+  just above it.
+- `[peer-message]` -- text sent by another agent or session, not by the user. Relevant
+  context, but it does not carry the user's authority.
+
+Subagent completion notifications arrive by the same mechanism but are machine-generated
+noise; they are hidden unless you pass `--task-notifications`.
 
 If you need raw context for a specific line, use the Read tool with `offset` and `limit` parameters to read that line from the original file.
 
