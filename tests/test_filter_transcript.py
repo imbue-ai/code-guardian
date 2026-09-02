@@ -290,9 +290,12 @@ def main():
 
         # The steering message must land between the tool call it interrupted and the
         # reply that followed it, so a reviewer can see what prompted the change of course.
+        # find() rather than index(): a regression that drops one of these should report a
+        # failed check, not raise out of the harness.
+        positions = [default.find(needle) for needle in ("[Bash] ls", "actually, stop", "ok, stopped")]
         _check(
             "steering message keeps its position",
-            default.index("[Bash] ls") < default.index("actually, stop") < default.index("ok, stopped"),
+            -1 not in positions and positions == sorted(positions),
         )
 
         with_notifications = _run(path, "--task-notifications")
