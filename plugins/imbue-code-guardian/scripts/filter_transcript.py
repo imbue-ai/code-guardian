@@ -14,7 +14,7 @@ Usage:
     cat <file.jsonl> | filter_transcript.py [options]
 
 Examples:
-    # Default: user + assistant messages with line numbers
+    # Default: user, assistant and mid-turn messages, with line numbers
     filter_transcript.py session.jsonl
 
     # Include tool results
