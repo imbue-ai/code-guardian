@@ -39,6 +39,15 @@ FILTER = REPO_ROOT / "plugins" / "imbue-code-guardian" / "scripts" / "filter_tra
 
 RECORDS = [
     {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "do the thing"}]}},
+    # Synthetic: no real record carries both a `message` and an `attachment`, in either
+    # direction. It pins the gate that keeps get_content reading an attachment payload only
+    # for records the classifier also labels from one, so that the text on a line always
+    # comes from whatever that line is labeled as.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "text", "text": "and check the logs"}]},
+        "attachment": {"type": "file", "filename": "irrelevant.txt"},
+    },
     {
         "type": "assistant",
         "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]},
@@ -54,15 +63,6 @@ RECORDS = [
     # The bulkiest real subtypes do keep their payload under a text key. Being readable
     # under a recognized key is no reason to escape the cap.
     {"type": "attachment", "attachment": {"type": "skill_listing", "text": "y" * 5000}},
-    # Synthetic: no real record carries both a `message` and an `attachment`, in either
-    # direction. It pins the gate that keeps get_content reading an attachment payload only
-    # for records the classifier also labels from one, so that the text on a line always
-    # comes from whatever that line is labeled as.
-    {
-        "type": "user",
-        "message": {"role": "user", "content": [{"type": "text", "text": "and check the logs"}]},
-        "attachment": {"type": "file", "filename": "irrelevant.txt"},
-    },
     {
         "type": "attachment",
         "attachment": {
