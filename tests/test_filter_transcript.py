@@ -335,17 +335,24 @@ def main():
             "--all includes an attachment with no text key",
             "[attachment:bash_output_audience_note]" in every and "toolu_abc" in every,
         )
+        # Each check reads the marker off its own line. Any one capped record satisfies a
+        # bare `"...(truncated)" in every`, so checked that way the three would cover for
+        # each other.
         _check(
             "--all caps a bulky attachment payload",
-            "[attachment:nested_memory]" in every and "...(truncated)" in every and "z" * 400 not in every,
+            _line_with(every, "[attachment:nested_memory]").endswith(" ...(truncated)") and "z" * 400 not in every,
         )
         _check(
             "--all caps a bulky payload that sits under `content`",
-            "[attachment:skill_listing]\ty" in every and "y" * 400 not in every,
+            "[attachment:skill_listing]\ty" in every
+            and _line_with(every, "[attachment:skill_listing]").endswith(" ...(truncated)")
+            and "y" * 400 not in every,
         )
         _check(
             "--all caps a bulky payload that sits under `snippet`",
-            "[attachment:edited_text_file]\ts" in every and "s" * 400 not in every,
+            "[attachment:edited_text_file]\ts" in every
+            and _line_with(every, "[attachment:edited_text_file]").endswith(" ...(truncated)")
+            and "s" * 400 not in every,
         )
         _check("a non-dict attachment renders nothing rather than its raw value", "oops" not in every)
 
