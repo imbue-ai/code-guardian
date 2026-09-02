@@ -163,13 +163,13 @@ def main():
         with_notifications = _run(path, "--task-notifications")
         _check("task notification shown with flag", "subagent finished" in with_notifications)
         _check(
-            "task notification not called steering",
+            "task notification carries its own tag",
             "[task-notification]\t<task-notification>subagent finished" in with_notifications,
         )
 
         every = _run(path, "--all")
         _check("--all includes steering", "actually, stop doing that" in every)
-        _check("--all includes other attachments", "total_tokens" in every)
+        _check("--all includes other attachments", "<total_tokens>5</total_tokens>" in every)
         _check("--all labels the attachment subtype", "[attachment:total_tokens_reminder]" in every)
         _check(
             "--all includes an attachment with no text key",
