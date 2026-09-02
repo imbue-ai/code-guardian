@@ -87,10 +87,13 @@ def extract_text(content):
 
 
 # Senders that `origin.kind` names positively as somebody other than the user, and the
-# tag each one gets. `human` is the user and is handled per record form; a kind that is
-# missing or unrecognized identifies nobody and must never be resolved by elimination --
-# a task notification queued mid-turn carries no `origin` at all, so "unmarked" is as much
-# the machine's signature as the user's.
+# tag each one gets. `human` is the user, and a kind that is missing or unrecognized names
+# nobody; both are resolved per record form, because what an unnamed sender means depends
+# on the form. In a queued command it means nothing at all -- a task notification queued
+# mid-turn carries no `origin` either, so "unmarked" is as much the machine's signature as
+# the user's, and the record gets a neutral tag. In a `user` record it is the ordinary
+# case: that is how a typed turn and a tool result both arrive, so the record stays
+# `user`. Neither form may reason from a kind it does not recognize.
 NON_USER_SENDERS = {
     "peer": "peer-message",
     "coordinator": "peer-message",
