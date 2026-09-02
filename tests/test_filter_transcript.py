@@ -17,6 +17,9 @@ Verifies:
   6. A mid-turn message with no recorded sender is shown but not attributed to the user
   7. A record whose sender field is malformed is surfaced rather than crashing the run
   8. A record's text always comes from whatever the line is labeled as
+  9. A malformed attachment is skipped rather than crashing the run
+ 10. --size and --total-size agree with the output they claim to measure, which is
+     what the verify-conversation skill picks a model off
 """
 
 import json
@@ -38,6 +41,8 @@ RECORDS = [
     # Several real subtypes keep nothing under a text-ish key at all; --all still owes
     # the reader the record rather than an empty line that the filter then skips.
     {"type": "attachment", "attachment": {"type": "bash_output_audience_note", "toolUseID": "toolu_abc"}},
+    # An attachment that is not an object at all: nothing to render, and nothing to crash on.
+    {"type": "attachment", "attachment": "oops"},
     # Same fallback, but a subtype whose payload is a whole file body.
     {"type": "attachment", "attachment": {"type": "nested_memory", "path": "sub/CLAUDE.md", "content": {"body": "z" * 5000}}},
     # A record labeled `user` must render the user's own words, whatever else it carries.
@@ -111,10 +116,11 @@ def _check(name, condition):
         FAIL += 1
 
 
-def _run(path, *flags):
-    result = subprocess.run(
-        [sys.executable, str(FILTER), *flags, str(path)], capture_output=True, text=True, check=True
-    )
+def _run(path, *flags, stdin_text=None):
+    argv = [sys.executable, str(FILTER), *flags]
+    if path is not None:
+        argv.append(str(path))
+    result = subprocess.run(argv, input=stdin_text, capture_output=True, text=True, check=True)
     return result.stdout
 
 
@@ -172,6 +178,21 @@ def main():
         _check(
             "--all caps a bulky attachment payload",
             "[attachment:nested_memory]" in every and "...(truncated)" in every and "z" * 400 not in every,
+        )
+        _check("malformed attachment does not crash --all", "oops" not in every)
+
+        # The verify-conversation skill picks the reviewer's model off --total-size, so the
+        # count has to track the output it claims to measure -- _compute_filtered_size
+        # reimplements the main loop's filtering and can drift from it.
+        size = int(_run(path, "--size").strip())
+        _check("--size counts the bytes it emits", size == len(default.encode("utf-8")))
+        _check(
+            "--total-size reads plain paths from stdin",
+            int(_run(None, "--total-size", stdin_text=f"{path}\n").strip()) == size,
+        )
+        _check(
+            "--total-size reads the source-tagged paths the discovery script emits",
+            int(_run(None, "--total-size", stdin_text=f"current\t{path}\n").strip()) == size,
         )
 
     print(f"\n{PASS} passed, {FAIL} failed")
