@@ -289,6 +289,12 @@ def main():
             "a delivered notification is gated by the same flag",
             "[task-notification]\t<task-notification>run 2 finished" in with_notifications,
         )
+        # The flag reveals one message type. A gate that returns True whenever the flag is
+        # set turns it into --all, and every positive check above still passes.
+        _check(
+            "--task-notifications reveals nothing else",
+            "total_tokens" not in with_notifications and "toolu_abc" not in with_notifications,
+        )
 
         every = _run(path, "--all")
         _check("--all includes steering", "actually, stop doing that" in every)
