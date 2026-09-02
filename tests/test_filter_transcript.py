@@ -23,6 +23,8 @@ Verifies:
      what the verify-conversation skill picks a model off
  11. A message delivered in the `user` role is tagged by the sender it names, so a
      notification or another agent's message is not attributed to the user
+ 12. A note the harness wrote into the user's slot is tagged as such, and an `origin`
+     naming a sender outranks that mark in both directions
 """
 
 import json
@@ -122,17 +124,36 @@ RECORDS = [
         "type": "user",
         "message": {"role": "user", "content": "<task-notification>run 2 finished</task-notification>"},
         "origin": {"kind": "task-notification"},
+        "isMeta": True,
         "promptSource": "system",
     },
     {
         "type": "user",
         "message": {"role": "user", "content": "Another Claude session sent a message: rebased for you"},
         "origin": {"kind": "peer", "from": "general-purpose"},
+        "isMeta": True,
     },
     {
         "type": "user",
         "message": {"role": "user", "content": "The coordinator sent a message while you were working"},
         "origin": {"kind": "coordinator"},
+        "isMeta": True,
+    },
+    # Notes the harness writes into the user's slot on nobody's behalf: hook feedback,
+    # system reminders, local-command caveats, skill preambles. They carry the same
+    # `isMeta` mark and no `origin`, and are the bulk of what wears it.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "Stop hook feedback: the reviewer found 2 issues"},
+        "isMeta": True,
+    },
+    # The harness also wraps a message the user sends mid-turn, and marks the wrapper --
+    # but names the user in `origin`, which outranks the mark.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "The user sent a new message while you were working: use the other branch"},
+        "origin": {"kind": "human"},
+        "isMeta": True,
     },
     {
         "type": "user",
@@ -207,6 +228,23 @@ def main():
             "[peer-message]\tThe coordinator sent a message while you were working" in default,
         )
         _check("a signed human turn is still the user", "[user]\tand one more thing" in default)
+
+        # The harness writes into the user's slot too, and marks what it writes `isMeta`.
+        # Those notes are shown -- a reviewer needs to see the hook feedback an assistant
+        # was answering -- but never over the user's signature.
+        _check(
+            "a harness note is not attributed to the user",
+            "[harness-note]\tStop hook feedback: the reviewer found 2 issues" in default,
+        )
+        _check("a harness note is not called user", "[user]\tStop hook feedback" not in default)
+        _check(
+            "a marked wrapper around the user's own words is still the user",
+            "[user]\tThe user sent a new message while you were working: use the other branch" in default,
+        )
+        _check(
+            "a marked wrapper around a peer's words is still the peer",
+            "[peer-message]\tAnother Claude session sent a message: rebased for you" in default,
+        )
 
         # The steering message must land between the tool call it interrupted and the
         # reply that followed it, so a reviewer can see what prompted the change of course.

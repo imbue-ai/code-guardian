@@ -26,7 +26,7 @@ This outputs filtered, human-readable text with line numbers. By default it show
 and assistant messages, plus messages that arrived mid-turn while the assistant was
 already working.
 
-Each line is tagged with its message type. `[user]` is the user speaking. Three further
+Each line is tagged with its message type. `[user]` is the user speaking. Four further
 tags are easy to misread:
 
 - `[steering]` -- text from the same user, sent mid-turn while the assistant was already
@@ -37,6 +37,9 @@ tags are easy to misread:
   context, but it does not carry the user's authority.
 - `[queued-message]` -- arrived mid-turn, but the transcript records no sender. Rare.
   Read it as text of unknown origin, not as an instruction from the user.
+- `[harness-note]` -- text Claude Code itself inserted into the user's slot: hook feedback,
+  system reminders, local-command caveats, skill preambles, fork briefings. It sits where a
+  user message would sit and often reads like one, but no person wrote it.
 
 Subagent completion notifications are machine-generated; they are hidden unless you pass
 `--task-notifications` (or `--all`), whether they arrived mid-turn or as their own turn.

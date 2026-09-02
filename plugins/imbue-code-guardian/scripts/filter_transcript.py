@@ -7,8 +7,10 @@ so you can use `sed -n '<N>p' <file>` to get the raw JSON for any line.
 
 Default output shows user and assistant messages, including text that arrived mid-turn
 while the assistant was working: steering from the user, a message from a peer agent,
-and anything queued whose sender the transcript does not record. Machine-generated
-subagent notifications are held back. Use flags to include other message types.
+and anything queued whose sender the transcript does not record. Notes the harness itself
+inserts into the user's slot are shown too, under their own tag rather than the user's.
+Machine-generated subagent notifications are held back. Use flags to include other
+message types.
 
 Usage:
     filter_transcript.py [options] <file.jsonl>
@@ -133,10 +135,24 @@ def classify_user_record(obj):
     subagent completion notices and messages relayed from another agent are delivered in
     it too, and name themselves in the same top-level `origin.kind` a queued command uses.
     Tagging those `[user]` invites a reader to hold the user answerable for text the
-    machine wrote. A record that names no sender stays `user`, since most of what the
-    user actually types carries no `origin` either.
+    machine wrote.
+
+    The harness fills the same slot with notes of its own -- hook feedback, system
+    reminders, local-command caveats, skill preambles, fork briefings -- and marks each
+    one `isMeta`. An `origin` naming a sender outranks that mark, in both directions: a
+    peer's message is marked `isMeta` too and stays a peer message, and so is the wrapper
+    the harness puts around a message the user sends mid-turn, which is still the user
+    speaking.
+
+    A record that names no sender and carries no mark stays `user`: that is how an
+    ordinary typed turn arrives, and how a tool result does.
     """
-    return NON_USER_SENDERS.get(get_origin_kind(obj), "user")
+    kind = get_origin_kind(obj)
+    if kind in NON_USER_SENDERS:
+        return NON_USER_SENDERS[kind]
+    if kind != "human" and obj.get("isMeta"):
+        return "harness-note"
+    return "user"
 
 
 def get_message_type(obj):
@@ -209,7 +225,7 @@ def should_include(msg_type, args):
     if args.all:
         return True
 
-    if msg_type in ("user", "assistant", "steering", "peer-message", "queued-message"):
+    if msg_type in ("user", "assistant", "steering", "peer-message", "queued-message", "harness-note"):
         return True
     if msg_type == "task-notification" and args.task_notifications:
         return True
