@@ -6,8 +6,8 @@
 #
 # Discovery is controlled by .reviewer/settings.json (under verify_conversation),
 # with optional local overrides from .reviewer/settings.local.json.
-# If the config file is not present, toggles default to true, except
-# include_subagents (see below).
+# If the config file is not present, tracked and current default to true and
+# all_agent_sessions and subagents default to false (see each below).
 #
 # Session IDs for "tracked" are read from
 # $MNGR_AGENT_STATE_DIR/claude_session_id_history (a mngr integration point --
@@ -29,7 +29,13 @@ SETTINGS=".reviewer/settings.json"
 # Env vars override config file (allows the skill to narrow scope per-invocation)
 INCLUDE_TRACKED="${INCLUDE_TRACKED:-$(read_json_config "$SETTINGS" "verify_conversation.include_tracked_sessions" "true")}"
 INCLUDE_CURRENT="${INCLUDE_CURRENT:-$(read_json_config "$SETTINGS" "verify_conversation.include_current_session" "true")}"
-INCLUDE_AGENT_DIR="${INCLUDE_AGENT_DIR:-$(read_json_config "$SETTINGS" "verify_conversation.include_all_agent_sessions" "true")}"
+# Despite the name, this is not scoped to the agent: it scans the whole projects
+# tree, so it picks up unrelated repos and throwaway sessions. It is off by
+# default because tracked and current already name the sessions this gate is
+# scoped to. Turn it on to reach sessions neither of those knows about -- a task
+# resumed under a new id outside mngr, for instance, since worktrees put a single
+# task's sessions under several project directories.
+INCLUDE_AGENT_DIR="${INCLUDE_AGENT_DIR:-$(read_json_config "$SETTINGS" "verify_conversation.include_all_agent_sessions" "false")}"
 
 # Subagent transcripts are off by default: a subagent's `user` records are not the
 # user. The first is the parent agent's spawn prompt, and the rest are almost all
