@@ -15,7 +15,7 @@ This is a single, **session-scoped** gate: it reviews the conversation (the agen
 
 If the user provides arguments, they serve as additional instructions for this run. For example:
 - `/verify-conversation only review tracked sessions` -- override config to only include tracked sessions
-- `/verify-conversation skip subagents` -- disable subagent transcript inclusion
+- `/verify-conversation include subagents` -- add subagent transcripts, which are excluded by default
 - `/verify-conversation only review the current session` -- only the current session
 
 To apply overrides, set env vars before calling the discovery script. The env vars are: `INCLUDE_TRACKED`, `INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, `INCLUDE_SUBAGENTS` (each `true` or `false`). For example, "only tracked sessions" means:
@@ -50,7 +50,7 @@ This outputs a single number (total bytes).
 
 - If total size exceeds 3MB (3000000 bytes), STOP and warn the user. The transcripts are too large for even the 1M context window. Suggest narrowing scope, for example:
   - `/verify-conversation only review tracked sessions`
-  - `/verify-conversation skip subagents`
+  - `/verify-conversation only review the current session`
   - Disabling some sources in `.reviewer/settings.json` under `verify_conversation` (or `.reviewer/settings.local.json` for local-only overrides)
 
   Do NOT proceed unless the user confirms they want to try anyway.

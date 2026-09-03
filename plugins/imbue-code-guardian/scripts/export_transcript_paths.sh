@@ -6,7 +6,8 @@
 #
 # Discovery is controlled by .reviewer/settings.json (under verify_conversation),
 # with optional local overrides from .reviewer/settings.local.json.
-# If the config file is not present, all toggles default to true.
+# If the config file is not present, toggles default to true, except
+# include_subagents (see below).
 #
 # Session IDs are read from $MNGR_AGENT_STATE_DIR/claude_session_id_history
 # (a mngr integration point -- see https://github.com/imbue-ai/mngr).
@@ -27,7 +28,15 @@ SETTINGS=".reviewer/settings.json"
 INCLUDE_TRACKED="${INCLUDE_TRACKED:-$(read_json_config "$SETTINGS" "verify_conversation.include_tracked_sessions" "true")}"
 INCLUDE_CURRENT="${INCLUDE_CURRENT:-$(read_json_config "$SETTINGS" "verify_conversation.include_current_session" "true")}"
 INCLUDE_AGENT_DIR="${INCLUDE_AGENT_DIR:-$(read_json_config "$SETTINGS" "verify_conversation.include_all_agent_sessions" "true")}"
-INCLUDE_SUBAGENTS="${INCLUDE_SUBAGENTS:-$(read_json_config "$SETTINGS" "verify_conversation.include_subagents" "true")}"
+
+# Subagent transcripts are off by default: a subagent's `user` records are not the
+# user. The first is the parent agent's spawn prompt, and the rest are almost all
+# tool results. The issue categories are written in terms of what "the user" said,
+# so a reviewer reading these attributes an orchestrator's instructions -- and the
+# agent's own shell output -- to a person. They also dominate the corpus by volume,
+# which pushes the total past the size gate in Step 2 of the skill. Turn this on
+# deliberately, knowing the reviewer cannot yet tell who is speaking in them.
+INCLUDE_SUBAGENTS="${INCLUDE_SUBAGENTS:-$(read_json_config "$SETTINGS" "verify_conversation.include_subagents" "false")}"
 
 # ---------------------------------------------------------------------------
 # Track emitted paths to avoid duplicates
