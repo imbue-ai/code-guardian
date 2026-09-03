@@ -9,12 +9,14 @@
 # If the config file is not present, toggles default to true, except
 # include_subagents (see below).
 #
-# Session IDs are read from $MNGR_AGENT_STATE_DIR/claude_session_id_history
-# (a mngr integration point -- see https://github.com/imbue-ai/mngr).
-# If $MNGR_CLAUDE_SESSION_ID is set and not already in the history, it is
-# included in the output so the current session is always covered.
-# Both env vars are optional: without them, the "tracked" and "current"
-# sections emit nothing and only the agent_dir scan runs.
+# Session IDs for "tracked" are read from
+# $MNGR_AGENT_STATE_DIR/claude_session_id_history (a mngr integration point --
+# see https://github.com/imbue-ai/mngr), which records the chain of sessions
+# belonging to one task. That env var is optional; without it "tracked" emits
+# nothing.
+# The "current" session is resolved from $MNGR_CLAUDE_SESSION_ID, falling back
+# to $CLAUDE_CODE_SESSION_ID, which Claude Code sets natively -- so the live
+# session is covered with or without mngr.
 # The agent_dir mode scans $CLAUDE_CONFIG_DIR/projects/ for all .jsonl files.
 
 set -euo pipefail
@@ -109,12 +111,18 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Current session (only if not already emitted via tracked)
 # ---------------------------------------------------------------------------
-# mngr (https://github.com/imbue-ai/mngr) exports MNGR_CLAUDE_SESSION_ID for
-# the live session. Optional: skipped if unset.
-if [ "$INCLUDE_CURRENT" = "true" ] && [ -n "${MNGR_CLAUDE_SESSION_ID:-}" ]; then
-    if [ -z "${_SEEN_SIDS[$MNGR_CLAUDE_SESSION_ID]:-}" ]; then
-        _SEEN_SIDS[$MNGR_CLAUDE_SESSION_ID]=1
-        file=$(_find_session_file "$MNGR_CLAUDE_SESSION_ID")
+# Claude Code sets CLAUDE_CODE_SESSION_ID for the live session; mngr
+# (https://github.com/imbue-ai/mngr) exports MNGR_CLAUDE_SESSION_ID for the same
+# thing. Prefer mngr's, since under mngr it is the value the tracked history is
+# keyed on, and fall back to the native one so this section still resolves when
+# the gate runs outside mngr. Without a fallback the only source left there is
+# the machine-wide agent_dir scan, which is a far blunter instrument than the
+# session the gate is scoped to review.
+CURRENT_SESSION_ID="${MNGR_CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [ "$INCLUDE_CURRENT" = "true" ] && [ -n "$CURRENT_SESSION_ID" ]; then
+    if [ -z "${_SEEN_SIDS[$CURRENT_SESSION_ID]:-}" ]; then
+        _SEEN_SIDS[$CURRENT_SESSION_ID]=1
+        file=$(_find_session_file "$CURRENT_SESSION_ID")
         if [ -n "$file" ]; then
             _emit "current" "$file"
             [ "$INCLUDE_SUBAGENTS" = "true" ] && _emit_subagents "current" "$file"
