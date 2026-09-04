@@ -5,19 +5,26 @@ Reads a JSONL transcript file and outputs a filtered, human-readable view
 with line numbers. The line numbers correspond to the original JSONL file,
 so you can use `sed -n '<N>p' <file>` to get the raw JSON for any line.
 
-Default output shows user and assistant messages only, with text content
-extracted. Use flags to include other message types.
+Default output shows user and assistant messages, including text that arrived mid-turn
+while the assistant was working: steering from the user, a message from a peer agent,
+and anything queued whose sender the transcript does not record. Notes the harness itself
+inserts into the user's slot are shown too, under their own tag rather than the user's.
+Machine-generated subagent notifications are held back. Use flags to include other
+message types.
 
 Usage:
     filter_transcript.py [options] <file.jsonl>
     cat <file.jsonl> | filter_transcript.py [options]
 
 Examples:
-    # Default: user + assistant messages with line numbers
+    # Default: everything the user, a peer or the assistant said, with line numbers
     filter_transcript.py session.jsonl
 
     # Include tool results
     filter_transcript.py --tool-results session.jsonl
+
+    # Include subagent completion notifications
+    filter_transcript.py --task-notifications session.jsonl
 
     # Include everything
     filter_transcript.py --all session.jsonl
@@ -32,6 +39,17 @@ Examples:
 import argparse
 import json
 import sys
+
+# How much of a payload that is shown for diagnosis rather than read as conversation
+# (a tool result, an attachment under --all) is worth printing.
+PREVIEW_LIMIT = 200
+
+
+def _preview(text):
+    """Abridge a payload that is shown for diagnosis rather than read as conversation."""
+    if len(text) <= PREVIEW_LIMIT:
+        return text
+    return text[:PREVIEW_LIMIT] + " ...(truncated)"
 
 
 def extract_text(content):
@@ -51,7 +69,7 @@ def extract_text(content):
                 # Show tool result content if it's text
                 result_content = item.get("content", "")
                 if isinstance(result_content, str) and result_content.strip():
-                    parts.append(f"[tool_result] {result_content[:200]}")
+                    parts.append(f"[tool_result] {_preview(result_content)}")
             elif item.get("type") == "tool_use":
                 name = item.get("name", "?")
                 inp = item.get("input", {})
@@ -59,7 +77,11 @@ def extract_text(content):
                     # Show command for Bash, file_path for Read/Write, pattern for Grep
                     detail = inp.get("command", inp.get("file_path", inp.get("pattern", "")))
                     if detail:
-                        parts.append(f"[{name}] {detail[:200]}")
+                        # A tool is free to take a structured argument where these three
+                        # take a string, so render whatever is there before abridging it.
+                        if not isinstance(detail, str):
+                            detail = json.dumps(detail)
+                        parts.append(f"[{name}] {_preview(detail)}")
                     else:
                         parts.append(f"[{name}]")
                 else:
@@ -68,27 +90,132 @@ def extract_text(content):
     return ""
 
 
+# Senders that `origin.kind` names positively as somebody other than the user, and the
+# tag each one gets. `human` is the user, and a kind that is missing or unrecognized names
+# nobody; both are resolved per record form, because what an unnamed sender means depends
+# on the form. In a queued command it means nothing at all -- a task notification queued
+# mid-turn carries no `origin` either, so "unmarked" is as much the machine's signature as
+# the user's, and the record gets a neutral tag. In a `user` record it is the ordinary
+# case: that is how a typed turn and a tool result both arrive, so the record stays
+# `user`. Neither form may reason from a kind it does not recognize.
+NON_USER_SENDERS = {
+    "peer": "peer-message",
+    "coordinator": "peer-message",
+    "task-notification": "task-notification",
+}
+
+
+def get_origin_kind(record):
+    """Read the sender named by a record's (or an attachment payload's) `origin` field."""
+    origin = record.get("origin")
+    return origin.get("kind") if isinstance(origin, dict) else None
+
+
+def classify_queued_command(attachment):
+    """Map a `queued_command` attachment to a message type.
+
+    Text that arrives while the assistant is already working -- a steering message
+    from the user, a message from a peer agent, or a subagent completion notice -- is
+    recorded as an `attachment` record with a `queued_command` payload, NOT as a
+    `user` message, and its text lives under `attachment.prompt` rather than
+    `message.content`. A reader that only walks user/assistant records drops it
+    silently, which makes the assistant look like it changed course for no reason.
+
+    Anything that identifies no sender is reported as `queued-message` -- still shown,
+    since dropping conversational text is the worse error, but never attributed to the
+    user.
+    """
+    kind = get_origin_kind(attachment)
+    if kind == "human":
+        return "steering"
+    if kind in NON_USER_SENDERS:
+        return NON_USER_SENDERS[kind]
+    if attachment.get("commandMode") == "task-notification":
+        return "task-notification"
+    return "queued-message"
+
+
+def classify_user_record(obj):
+    """Map a record delivered in the `user` role to a message type.
+
+    The `user` role is a slot in the API conversation, not a claim about authorship:
+    subagent completion notices and messages relayed from another agent are delivered in
+    it too, and name themselves in the same top-level `origin.kind` a queued command uses.
+    Tagging those `[user]` invites a reader to hold the user answerable for text the
+    machine wrote.
+
+    The harness fills the same slot with notes of its own -- hook feedback, system
+    reminders, local-command caveats, skill preambles, fork briefings -- and marks each
+    one `isMeta`. An `origin` naming a sender outranks that mark, in both directions: a
+    peer's message is marked `isMeta` too and stays a peer message, and so is the wrapper
+    the harness puts around a message the user sends mid-turn, which is still the user
+    speaking.
+
+    A record that names no sender and carries no mark stays `user`: that is how an
+    ordinary typed turn arrives, and how a tool result does.
+    """
+    kind = get_origin_kind(obj)
+    if kind in NON_USER_SENDERS:
+        return NON_USER_SENDERS[kind]
+    if kind != "human" and obj.get("isMeta"):
+        return "harness-note"
+    return "user"
+
+
 def get_message_type(obj):
     """Determine the message type from a JSONL object."""
     # Top-level type field
     msg_type = obj.get("type", "")
 
+    if msg_type == "attachment":
+        attachment = obj.get("attachment")
+        if not isinstance(attachment, dict):
+            return msg_type
+        if attachment.get("type") == "queued_command":
+            return classify_queued_command(attachment)
+        # Tag the subtype so --all output distinguishes e.g. hook results from file reads
+        subtype = attachment.get("type", "?")
+        return f"attachment:{subtype}"
+
     # Check nested message type
     message = obj.get("message", {})
     if isinstance(message, dict):
         role = message.get("role", "")
-        if role in ("user", "assistant"):
+        if role == "user":
+            return classify_user_record(obj)
+        if role == "assistant":
             return role
 
     # Check for content with tool_result (user turn with tool results)
     if msg_type == "user":
-        return "user"
+        return classify_user_record(obj)
 
     return msg_type
 
 
 def get_content(obj):
     """Extract the content field from a JSONL object."""
+    # Attachments carry their payload under a different key than ordinary messages, and
+    # which key varies by subtype. Read it only for records the classifier also treats as
+    # attachments, so that the text shown always comes from whatever the line is labeled as.
+    if obj.get("type") == "attachment":
+        attachment = obj.get("attachment")
+        if isinstance(attachment, dict):
+            # A queued command is conversation and shows by default, so it is rendered
+            # whole -- real steering messages run to tens of thousands of characters and
+            # abridging one would hide what the user asked for. Every other subtype is
+            # diagnostic filler that only --all asks for, and several (a skill listing, an
+            # edited file body) are large enough that one record would swamp the output.
+            verbatim = attachment.get("type") == "queued_command"
+            for key in ("prompt", "text", "snippet", "content"):
+                value = attachment.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value if verbatim else _preview(value)
+            # No recognized text key: dump the payload so that --all, which claims to
+            # include everything, does not lose the record to the empty-text guard.
+            dumped = json.dumps({k: v for k, v in attachment.items() if k != "type"})
+            return dumped if verbatim else _preview(dumped)
+
     # Try message.content first (standard format)
     message = obj.get("message", {})
     if isinstance(message, dict):
@@ -105,7 +232,9 @@ def should_include(msg_type, args):
     if args.all:
         return True
 
-    if msg_type in ("user", "assistant"):
+    if msg_type in ("user", "assistant", "steering", "peer-message", "queued-message", "harness-note"):
+        return True
+    if msg_type == "task-notification" and args.task_notifications:
         return True
     if msg_type == "tool_use" and args.tool_use:
         return True
@@ -171,13 +300,24 @@ def _compute_filtered_size(path, args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Filter and format Claude Code session transcript JSONL files.")
+    # The module docstring is the only place the default message-type set is written down,
+    # and review-conversation.md sends its reader here to learn the options, so `--help`
+    # has to carry it.
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("file", nargs="?", help="JSONL file to filter (reads stdin if omitted)")
     parser.add_argument("--tool-use", action="store_true", help="Include tool_use messages")
     parser.add_argument("--tool-results", action="store_true", help="Include tool_result messages")
     parser.add_argument("--thinking", action="store_true", help="Include thinking messages")
     parser.add_argument("--system", action="store_true", help="Include system messages")
     parser.add_argument("--progress", action="store_true", help="Include progress messages")
+    parser.add_argument(
+        "--task-notifications",
+        action="store_true",
+        help="Include subagent completion notifications (queued mid-turn, but machine-generated)",
+    )
     parser.add_argument("--all", action="store_true", help="Include all message types")
     parser.add_argument("--json", action="store_true", help="Output as JSON instead of formatted text")
     parser.add_argument("--no-line-numbers", action="store_true", help="Omit line numbers")

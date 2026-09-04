@@ -13,16 +13,24 @@ This is a single, **session-scoped** gate: it reviews the conversation (the agen
 
 ## Arguments
 
+By default this reviews the current session, plus the tracked session chain for this
+task when running under mngr. The arguments below widen or narrow that.
+
 If the user provides arguments, they serve as additional instructions for this run. For example:
-- `/verify-conversation only review tracked sessions` -- override config to only include tracked sessions
-- `/verify-conversation skip subagents` -- disable subagent transcript inclusion
-- `/verify-conversation only review the current session` -- only the current session
+- `/verify-conversation only review the current session` -- drop the tracked chain
+- `/verify-conversation only review tracked sessions` -- the task chain, without the live session
+- `/verify-conversation include all sessions` -- add every session in the projects tree,
+  which reaches sessions tracked and current do not know about but also pulls in unrelated work
+- `/verify-conversation include subagents` -- add subagent transcripts, which are excluded by default
 
 To apply overrides, set env vars before calling the discovery script. The env vars are: `INCLUDE_TRACKED`, `INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, `INCLUDE_SUBAGENTS` (each `true` or `false`). For example, "only tracked sessions" means:
 
 ```bash
 INCLUDE_TRACKED=true INCLUDE_CURRENT=false INCLUDE_AGENT_DIR=false INCLUDE_SUBAGENTS=false bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh
 ```
+
+Each variable defaults to the setting of the same name under `verify_conversation`,
+so an override only needs to name the sources it is changing.
 
 ## Instructions
 
@@ -48,9 +56,9 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh | python3 ${CLAUDE
 
 This outputs a single number (total bytes).
 
-- If total size exceeds 3MB (3000000 bytes), STOP and warn the user. The transcripts are too large for even the 1M context window. Suggest narrowing scope, for example:
+- If total size exceeds 3MB (3000000 bytes), STOP and warn the user. The transcripts are too large for even the 1M context window. Reaching this size means sources beyond the default are enabled, so say which ones and suggest narrowing, for example:
+  - `/verify-conversation only review the current session`
   - `/verify-conversation only review tracked sessions`
-  - `/verify-conversation skip subagents`
   - Disabling some sources in `.reviewer/settings.json` under `verify_conversation` (or `.reviewer/settings.local.json` for local-only overrides)
 
   Do NOT proceed unless the user confirms they want to try anyway.

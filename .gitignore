@@ -6,3 +6,7 @@
 .reviewer/outputs/
 .reviewer/logs/
 .reviewer/settings.local.json
+
+# Byte-compiled files, produced whenever anything imports the plugin scripts.
+__pycache__/
+*.pyc

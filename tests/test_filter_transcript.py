@@ -1,0 +1,472 @@
+#!/usr/bin/env python3
+"""Unit test for filter_transcript.py.
+
+Builds a synthetic transcript covering the record shapes that a real session
+produces, then checks what the filter surfaces at each flag setting.
+
+Run: python3 tests/test_filter_transcript.py
+
+Verifies:
+  1. Ordinary user and assistant turns are shown by default
+  2. Steering messages (mid-turn user text) are shown by default, in position
+  3. Peer-agent messages are shown by default and labeled distinctly
+  4. Subagent completion notices are hidden by default, shown with --task-notifications
+  5. Attachments that are not queued commands stay hidden by default, and are shown
+     with their subtype under --all, including ones whose payload sits under no
+     recognized text key -- capped under every key get_content reads, so one bulky
+     record cannot swamp the output, while conversational text is never abridged
+  6. A mid-turn message with no recorded sender is shown but not attributed to the user
+  7. A record whose sender field is malformed is surfaced under a neutral label
+  8. A record's text always comes from whatever the line is labeled as
+  9. Every run over the fixture exits cleanly, so no malformed record crashes the
+     filter, and a tool argument that is not a string is rendered rather than sliced
+ 10. --size and --total-size agree with the output they claim to measure, which is
+     what the verify-conversation skill picks a model off
+ 11. A message delivered in the `user` role is tagged by the sender it names, so a
+     notification or another agent's message is not attributed to the user
+ 12. A note the harness wrote into the user's slot is tagged as such, and an `origin`
+     naming a sender outranks that mark in both directions
+ 13. A multi-line message keeps its continuation lines, indented under the tag
+ 14. A sender kind the filter does not recognize is resolved by record form: neutral in
+     a queued command, the user in a delivered one
+ 15. The number on a line is the line the record occupies in the file, which is how the
+     reviewer reads a record back out of the raw transcript, including across the blank
+     and half-written lines a live session file contains
+"""
+
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FILTER = REPO_ROOT / "plugins" / "imbue-code-guardian" / "scripts" / "filter_transcript.py"
+
+RECORDS = [
+    {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "do the thing"}]}},
+    # Synthetic: no real record carries both a `message` and an `attachment`, in either
+    # direction. It pins the gate that keeps get_content reading an attachment payload only
+    # for records the classifier also labels from one, so that the text on a line always
+    # comes from whatever that line is labeled as.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "text", "text": "and check the logs"}]},
+        "attachment": {"type": "file", "filename": "irrelevant.txt"},
+    },
+    {
+        "type": "assistant",
+        "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]},
+    },
+    {"type": "attachment", "attachment": {"type": "total_tokens_reminder", "text": "<total_tokens>5</total_tokens>"}},
+    # Several real subtypes keep nothing under a text-ish key at all; --all still owes
+    # the reader the record rather than an empty line that the filter then skips.
+    {"type": "attachment", "attachment": {"type": "bash_output_audience_note", "toolUseID": "toolu_abc"}},
+    # An attachment that is not an object at all: nothing to render, and nothing to crash on.
+    {"type": "attachment", "attachment": "oops"},
+    # Same fallback, but a subtype whose payload is a whole file body.
+    {"type": "attachment", "attachment": {"type": "nested_memory", "path": "sub/CLAUDE.md", "content": {"body": "z" * 5000}}},
+    # The bulkiest real subtypes do keep their payload under a recognized key -- just not
+    # under `text`: a skill listing keeps it under `content`, an edited file under
+    # `snippet`. Between them and the reminder above, every key get_content prefers is
+    # exercised by the subtype that actually uses it. Being readable is no reason to
+    # escape the cap.
+    {"type": "attachment", "attachment": {"type": "skill_listing", "content": "y" * 5000, "skillCount": 3}},
+    {"type": "attachment", "attachment": {"type": "edited_text_file", "filename": "a.py", "snippet": "s" * 5000}},
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "actually, stop doing that",
+            "commandMode": "prompt",
+            "origin": {"kind": "human"},
+        },
+    },
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "<task-notification>subagent finished</task-notification>",
+            "commandMode": "task-notification",
+        },
+    },
+    # Steering is conversation, not filler: real ones reach tens of thousands of
+    # characters, and abridging one would hide what the user asked for.
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "one long thought: " + "w" * 5000,
+            "commandMode": "prompt",
+            "origin": {"kind": "human"},
+        },
+    },
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "heads up from your fork",
+            "commandMode": "prompt",
+            "origin": {"kind": "peer", "from": "uds:/tmp/sock"},
+        },
+    },
+    # No `origin`, and not a task notification: sender unknown. Real sessions do not
+    # currently produce this shape, but a reader must not fill the gap with "the user".
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "message from nobody in particular",
+            "commandMode": "prompt",
+        },
+    },
+    # A coordinator speaks in the queued form as well as the delivered one.
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "the coordinator wants a status update",
+            "commandMode": "prompt",
+            "origin": {"kind": "coordinator"},
+        },
+    },
+    # `origin` is a dict in every shape the harness records today. A reader of a
+    # long-lived on-disk format still cannot assume that: one unreadable record must
+    # not take the rest of the transcript down with it.
+    {
+        "type": "attachment",
+        "attachment": {
+            "type": "queued_command",
+            "prompt": "message with an unreadable origin",
+            "commandMode": "prompt",
+            "origin": "human",
+        },
+    },
+    # The same senders also deliver text in the `user` role, naming themselves in a
+    # top-level `origin` rather than inside an attachment payload.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "<task-notification>run 2 finished</task-notification>"},
+        "origin": {"kind": "task-notification"},
+        "isMeta": True,
+        "promptSource": "system",
+    },
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "Another Claude session sent a message: rebased for you"},
+        "origin": {"kind": "peer", "from": "general-purpose"},
+        "isMeta": True,
+    },
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "The coordinator sent a message while you were working"},
+        "origin": {"kind": "coordinator"},
+        "isMeta": True,
+    },
+    # Notes the harness writes into the user's slot on nobody's behalf: hook feedback,
+    # system reminders, local-command caveats, skill preambles. They carry the same
+    # `isMeta` mark and no `origin`, and are the bulk of what wears it.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "Stop hook feedback: the reviewer found 2 issues"},
+        "isMeta": True,
+    },
+    # The harness also wraps a message the user sends mid-turn, and marks the wrapper --
+    # but names the user in `origin`, which outranks the mark.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "The user sent a new message while you were working: use the other branch"},
+        "origin": {"kind": "human"},
+        "isMeta": True,
+    },
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "and one more thing"},
+        "origin": {"kind": "human"},
+        "promptSource": "typed",
+    },
+    # Sidechain records name their sender `unclassified` -- a kind the filter recognizes as
+    # naming nobody. In this form that is the ordinary case, so the record stays the user's.
+    {
+        "type": "user",
+        "message": {"role": "user", "content": "look at the failing test"},
+        "origin": {"kind": "unclassified"},
+    },
+    # A tool result comes back in the `user` slot. Like any other payload shown for
+    # diagnosis, a long one is abridged -- and has to say so, or it reads as the whole
+    # result.
+    {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "r" * 5000}]}},
+    # These three keys hold a string for every tool that has one, but nothing stops a tool
+    # from taking a structured argument under the same name.
+    {
+        "type": "assistant",
+        "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": ["a", "b"]}}]},
+    },
+    # Most real turns run to several lines; the continuation indent and the byte count
+    # both have to hold for one.
+    {
+        "type": "assistant",
+        "message": {"role": "assistant", "content": [{"type": "text", "text": "ok, stopped\nnothing else to do"}]},
+    },
+]
+
+PASS = 0
+FAIL = 0
+
+
+def _check(name, condition, detail=""):
+    """Record one check; `detail` is printed only when it fails, to say what went wrong."""
+    global PASS, FAIL
+    if condition:
+        print(f"  PASS {name}")
+        PASS += 1
+    else:
+        print(f"  FAIL {name}" + (f" -- {detail}" if detail else ""))
+        FAIL += 1
+
+
+def _line_with(output, needle):
+    """Return the one output line containing `needle`, or "" if there is not exactly one."""
+    matches = [line for line in output.split("\n") if needle in line]
+    return matches[0] if len(matches) == 1 else ""
+
+
+def _write_transcript(path):
+    """Write the fixture transcript and return the line each record landed on.
+
+    A live session file can hold a blank line, and a line can be half-written while the
+    session is still going. Neither renders, and both still occupy a line number -- which
+    is what the reviewer reads records back by, so the fixture contains one of each.
+    """
+    raw_lines = []
+    line_numbers = []
+    for index, record in enumerate(RECORDS):
+        if index == 1:
+            raw_lines.append("")
+            raw_lines.append('{"type": "user", "message": {"role": "user", "content": "half-writ')
+        raw_lines.append(json.dumps(record))
+        line_numbers.append(len(raw_lines))
+    path.write_text("\n".join(raw_lines) + "\n")
+    return line_numbers
+
+
+def _line_number_of(line_numbers, needle):
+    """The transcript line of the one fixture record whose JSON holds `needle`."""
+    matches = [index for index, record in enumerate(RECORDS) if needle in json.dumps(record)]
+    return line_numbers[matches[0]] if len(matches) == 1 else None
+
+
+def _as_int(text):
+    """Parse a byte count, or None when the run printed something that is not one."""
+    text = text.strip()
+    return int(text) if text.isdigit() else None
+
+
+def _run(path, *flags, stdin_text=None):
+    """Run the filter over the fixture and return its stdout.
+
+    A crash is reported as a failed check rather than raised, so one malformed-record
+    regression does not take the rest of the suite's report down with it.
+    """
+    argv = [sys.executable, str(FILTER), *flags]
+    if path is not None:
+        argv.append(str(path))
+    result = subprocess.run(argv, input=stdin_text, capture_output=True, text=True)
+    _check(
+        f"the filter survives the whole fixture with {' '.join(flags) or 'no flags'}",
+        result.returncode == 0 and not result.stderr,
+        f"exit {result.returncode}: {result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ''}",
+    )
+    return result.stdout
+
+
+def main():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "session.jsonl"
+        line_numbers = _write_transcript(path)
+        raw_lines = path.read_text().split("\n")
+
+        default = _run(path)
+        _check("user turn shown", "do the thing" in default)
+        _check("assistant turn shown", "ok, stopped" in default)
+        _check("a multi-line turn indents its continuation", "\n\t\t\tnothing else to do" in default)
+        _check(
+            "a line's text comes from the payload it is labeled from",
+            "[user]\tand check the logs" in default and "irrelevant.txt" not in default,
+        )
+        _check("steering message shown", "[steering]\tactually, stop doing that" in default)
+
+        # A reviewer reads a record back out of the raw file by the number on its line, so
+        # the number has to be the line the record actually occupies.
+        steering_line = _line_number_of(line_numbers, "actually, stop doing that")
+        _check(
+            "the tag is prefixed with the record's line number",
+            f"L{steering_line}\t[steering]\tactually, stop doing that" in default,
+            f"expected L{steering_line}, rendered: {_line_with(default, 'actually, stop doing that')}",
+        )
+        _check(
+            "that line number finds the record in the raw file",
+            steering_line is not None and "actually, stop doing that" in raw_lines[steering_line - 1],
+        )
+        _check("a half-written record renders nothing", "half-writ" not in default)
+        _check(
+            "the first record is on line 1",
+            "L1\t[user]\tdo the thing" in default and _line_number_of(line_numbers, "do the thing") == 1,
+        )
+        _check("a long steering message is never abridged", "one long thought: " + "w" * 5000 in default)
+        _check("peer message shown", "[peer-message]\theads up from your fork" in default)
+        _check("task notification hidden", "subagent finished" not in default)
+
+        # An abridged payload has to be distinguishable from a complete one, whichever
+        # kind of payload it is.
+        _check(
+            "a long tool result says that it was abridged",
+            _line_with(default, "[tool_result] ").endswith(" ...(truncated)"),
+            f"rendered: {_line_with(default, '[tool_result] ')[:120]}",
+        )
+        _check("a long tool result is capped", "r" * 400 not in default)
+        _check("a structured tool argument is rendered", '[Grep] ["a", "b"]' in default)
+
+        # Sender is read from origin.kind, never inferred from what is missing: an
+        # unsigned message is surfaced, but under its own label rather than [steering].
+        _check(
+            "unsigned message shown",
+            "[queued-message]\tmessage from nobody in particular" in default,
+        )
+        _check("unsigned message not called steering", "[steering]\tmessage from nobody" not in default)
+        _check(
+            "a malformed sender field names nobody",
+            "[queued-message]\tmessage with an unreadable origin" in default,
+        )
+        _check("unrelated attachment hidden", "total_tokens" not in default and "toolu_abc" not in default)
+
+        # The `user` role is a delivery slot, not a claim of authorship: the same senders
+        # that queue text mid-turn also speak in it, and must keep their own labels there.
+        _check("delivered notification hidden", "run 2 finished" not in default)
+        _check(
+            "delivered peer message not attributed to the user",
+            "[peer-message]\tAnother Claude session sent a message: rebased for you" in default,
+        )
+        _check(
+            "coordinator message not attributed to the user",
+            "[peer-message]\tThe coordinator sent a message while you were working" in default,
+        )
+        _check("a signed human turn is still the user", "[user]\tand one more thing" in default)
+        _check(
+            "an unrecognized sender in the user's slot stays the user",
+            "[user]\tlook at the failing test" in default,
+        )
+        _check(
+            "a queued coordinator message is a peer message",
+            "[peer-message]\tthe coordinator wants a status update" in default,
+        )
+
+        # The harness writes into the user's slot too, and marks what it writes `isMeta`.
+        # Those notes are shown -- a reviewer needs to see the hook feedback an assistant
+        # was answering -- but never over the user's signature.
+        _check(
+            "a harness note is not attributed to the user",
+            "[harness-note]\tStop hook feedback: the reviewer found 2 issues" in default,
+        )
+        _check("a harness note is not called user", "[user]\tStop hook feedback" not in default)
+        _check(
+            "a marked wrapper around the user's own words is still the user",
+            "[user]\tThe user sent a new message while you were working: use the other branch" in default,
+        )
+        _check(
+            "a marked wrapper around a peer's words is still the peer",
+            "[peer-message]\tAnother Claude session sent a message: rebased for you" in default,
+        )
+
+        # The steering message must land between the tool call it interrupted and the
+        # reply that followed it, so a reviewer can see what prompted the change of course.
+        # find() rather than index(): a regression that drops one of these should report a
+        # failed check, not raise out of the harness.
+        positions = [default.find(needle) for needle in ("[Bash] ls", "actually, stop", "ok, stopped")]
+        _check(
+            "steering message keeps its position",
+            -1 not in positions and positions == sorted(positions),
+        )
+
+        with_notifications = _run(path, "--task-notifications")
+        _check("task notification shown with flag", "subagent finished" in with_notifications)
+        _check(
+            "task notification carries its own tag",
+            "[task-notification]\t<task-notification>subagent finished" in with_notifications,
+        )
+        _check(
+            "a delivered notification is gated by the same flag",
+            "[task-notification]\t<task-notification>run 2 finished" in with_notifications,
+        )
+        # The flag reveals one message type. A gate that returns True whenever the flag is
+        # set turns it into --all, and every positive check above still passes.
+        _check(
+            "--task-notifications reveals nothing else",
+            "total_tokens" not in with_notifications and "toolu_abc" not in with_notifications,
+        )
+
+        every = _run(path, "--all")
+        _check("--all includes steering", "actually, stop doing that" in every)
+        # The payload has to follow the tag directly: when get_content finds no key it
+        # recognizes it dumps the whole payload as JSON, which still contains the text and
+        # so satisfies a bare substring check.
+        _check(
+            "--all includes other attachments",
+            "[attachment:total_tokens_reminder]\t<total_tokens>5</total_tokens>" in every,
+        )
+        _check("--all labels the attachment subtype", "[attachment:total_tokens_reminder]" in every)
+        _check(
+            "--all includes an attachment with no text key",
+            "[attachment:bash_output_audience_note]" in every and "toolu_abc" in every,
+        )
+        # Each check reads the marker off its own line. Any one capped record satisfies a
+        # bare `"...(truncated)" in every`, so checked that way the three would cover for
+        # each other.
+        _check(
+            "--all caps a bulky attachment payload",
+            _line_with(every, "[attachment:nested_memory]").endswith(" ...(truncated)") and "z" * 400 not in every,
+            f"rendered: {_line_with(every, '[attachment:nested_memory]')[:120]}",
+        )
+        _check(
+            "--all caps a bulky payload that sits under `content`",
+            "[attachment:skill_listing]\ty" in every
+            and _line_with(every, "[attachment:skill_listing]").endswith(" ...(truncated)")
+            and "y" * 400 not in every,
+            f"rendered: {_line_with(every, '[attachment:skill_listing]')[:120]}",
+        )
+        _check(
+            "--all caps a bulky payload that sits under `snippet`",
+            "[attachment:edited_text_file]\ts" in every
+            and _line_with(every, "[attachment:edited_text_file]").endswith(" ...(truncated)")
+            and "s" * 400 not in every,
+            f"rendered: {_line_with(every, '[attachment:edited_text_file]')[:120]}",
+        )
+        _check("a non-dict attachment renders nothing rather than its raw value", "oops" not in every)
+
+        # The verify-conversation skill picks the reviewer's model off --total-size, so the
+        # count has to track the output it claims to measure -- _compute_filtered_size
+        # reimplements the main loop's filtering and can drift from it.
+        size = _as_int(_run(path, "--size"))
+        _check("--size counts the bytes it emits", size is not None and size == len(default.encode("utf-8")))
+        _check(
+            "--total-size reads plain paths from stdin",
+            _as_int(_run(None, "--total-size", stdin_text=f"{path}\n")) == size,
+        )
+        _check(
+            "--total-size reads the source-tagged paths the discovery script emits",
+            _as_int(_run(None, "--total-size", stdin_text=f"current\t{path}\n")) == size,
+        )
+        # A session can be deleted between discovery and measurement, and the skill has no
+        # answer to give if one stale path aborts the whole total.
+        missing = Path(tmp) / "deleted-session.jsonl"
+        _check(
+            "--total-size skips a path it cannot read",
+            _as_int(_run(None, "--total-size", stdin_text=f"{path}\n{missing}\n")) == size,
+        )
+
+    print(f"\n{PASS} passed, {FAIL} failed")
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
