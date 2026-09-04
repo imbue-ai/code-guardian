@@ -43,9 +43,6 @@ This file starts at 0.5.0. For earlier releases, read the git history.
   `$MNGR_CLAUDE_SESSION_ID`. It now falls back to `$CLAUDE_CODE_SESSION_ID`, which Claude Code sets
   natively.
 
-- A `user` record carrying an attachment rendered the attachment's metadata in place of the user's
-  own words.
-
 - `--help` printed the flags but not the module docstring, which is the only place recording
   which message types show by default and that task notifications are held back.
 
