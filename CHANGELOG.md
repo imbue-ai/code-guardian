@@ -49,7 +49,8 @@ This file starts at 0.5.0. For earlier releases, read the git history.
 - A `user` record carrying an attachment rendered the attachment's metadata in place of the user's
   own words.
 
-- `--help` printed no usage text at all.
+- `--help` printed the flags but not the module docstring, which is the only place recording
+  which message types show by default and that task notifications are held back.
 
 - `--all` silently dropped every attachment record, despite claiming to show everything. Attachment
   payloads are now shown, capped at 200 characters like other payloads, with the cut marked. Steering
