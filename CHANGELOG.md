@@ -36,8 +36,7 @@ This file starts at 0.5.0. For earlier releases, read the git history.
 - **Machine-written records were attributed to the user.** Harness task notifications, system
   reminders, stop-hook feedback, and messages relayed from other agents all rendered as `[user]`.
   Sender is now read from `origin.kind` and `isMeta`, which name the author positively, and the
-  reviewer sees `[harness-note]`, `[peer-message]` and `[task-notification]` instead. Across one
-  local corpus this corrected 1,376 records.
+  reviewer sees `[harness-note]`, `[peer-message]` and `[task-notification]` instead.
 
 - The current session could not be found outside mngr: the `current` source keyed only on
   `$MNGR_CLAUDE_SESSION_ID`. It now falls back to `$CLAUDE_CODE_SESSION_ID`, which Claude Code sets
