@@ -55,15 +55,6 @@ This file starts at 0.5.0. For earlier releases, read the git history.
   payloads are now shown, capped at 200 characters like other payloads, with the cut marked. Steering
   text is exempt from the cap and never truncated.
 
-- Stop hook: an exempt-path merge block is now reported as its own distinct cause instead of being
-  reset, is matched against the exempt list in one pass rather than by parsing git's message, and
-  classifies paths with non-ASCII names correctly. (#29)
-
-- Stop hook: detached-HEAD (pinned) checkouts are skipped rather than processed. (#30)
-
-- The review skills resolve each directory's base branch and settings the way the hook does,
-  including via the `.local.json` sibling. (#29)
-
 - `test_multi_dir_stop_hook.sh` failed 14 of 75 checks on any machine: the bare origin the fixture
   builds was created without `-b main`, so its HEAD pointed at an unborn `master` and the four
   scenarios that clone it got an empty working tree.
