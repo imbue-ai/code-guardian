@@ -56,9 +56,10 @@ This file starts at 0.5.0. For earlier releases, read the git history.
   payloads are now shown, capped at 200 characters like other payloads, with the cut marked. Steering
   text is exempt from the cap and never truncated.
 
-- `test_multi_dir_stop_hook.sh` failed 14 of 75 checks on any machine: the bare origin the fixture
-  builds was created without `-b main`, so its HEAD pointed at an unborn `master` and the four
-  scenarios that clone it got an empty working tree.
+- `test_multi_dir_stop_hook.sh` failed 14 of 75 checks wherever git's `init.defaultBranch` was not
+  `main`: the bare origin the fixture builds was created without `-b main`, so its HEAD pointed at
+  an unborn branch of another name and the four scenarios that clone it got an empty working tree.
+  The fixture now pins the branch instead of inheriting it.
 
 ### Added
 
