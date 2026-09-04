@@ -63,7 +63,10 @@ make_repo() { # <path>
     # Bare origin lives OUTSIDE every worktree so it never shows up in a repo's
     # own `git status` (a real remote would be on GitHub, not in the tree).
     origin="$(mktemp -d "$WORK/origin.XXXXXX")/repo.git"
-    git init -q --bare "$origin"
+    # -b main matters even on a bare repo: its HEAD is what `git clone` checks out,
+    # and pushing a branch does not move it. Left at the git default, a clone of this
+    # origin lands on an unborn `master` with an empty working tree.
+    git init -q --bare -b main "$origin"
     _gitq "$p" init -q -b main
     _gitq "$p" remote add origin "$origin"
     echo "# base" > "$p/README.md"
