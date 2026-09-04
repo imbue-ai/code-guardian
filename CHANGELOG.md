@@ -22,8 +22,8 @@ This file starts at 0.5.0. For earlier releases, read the git history.
   record is never a person. The first is the parent agent's spawn prompt and the rest are almost
   entirely tool results, while the issue categories are written in terms of what "the user" said.
 
-- `/verify-conversation` arguments now widen scope rather than narrow it, and `SKILL.md` documents
-  what is included by default.
+- `/verify-conversation`'s argument examples now state what is included by default, and cover
+  widening the scope as well as narrowing it.
 
 ### Fixed
 
