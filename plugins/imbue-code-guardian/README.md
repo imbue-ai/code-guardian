@@ -134,6 +134,16 @@ The orchestrator tracks consecutive blocked attempts at the same *composite stat
 
 The plugin ships default issue categories. To customize them for your project, run `/imbue-code-guardian:reviewer-init-categories` to copy the defaults to `.reviewer/code-issue-categories.md` and `.reviewer/conversation-issue-categories.md`, then edit directly. The skills check `.reviewer/` first, falling back to plugin defaults.
 
+The shipped defaults under `agents/categories/` are generated from [imbue-ai/vet](https://github.com/imbue-ai/vet) by `scripts/generate_verify_skills.py`; change them there, not here. A pre-commit hook checks the generated files still match vet, and needs `VET_REPO` pointing at a vet checkout:
+
+```bash
+git clone https://github.com/imbue-ai/vet.git ../vet
+export VET_REPO="$(cd ../vet && pwd)"
+pre-commit install
+```
+
+The hook only runs on commits that touch the generator or one of the generated files. Those commits fail with `VET_REPO must be set` if the variable is missing, so export it in your shell profile rather than per-command.
+
 ## Agents
 
 - **verify-and-fix** -- Autonomous code verifier and fixer (used by autofix)
