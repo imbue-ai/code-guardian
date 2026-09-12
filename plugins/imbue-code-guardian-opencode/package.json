@@ -1,0 +1,14 @@
+{
+  "name": "imbue-code-guardian-opencode",
+  "version": "0.1.0",
+  "description": "Automated code review enforcement for opencode: blocks a session from finishing until autofix, architecture verification, and conversation review have run. Trigger + gate-check port of imbue-code-guardian.",
+  "type": "module",
+  "main": "index.ts",
+  "files": ["index.ts", "scripts"],
+  "keywords": ["code-review", "autofix", "architecture", "enforcement", "opencode-plugin"],
+  "author": "Imbue",
+  "repository": "https://github.com/imbue-ai/code-guardian",
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "./scripts/reviewer_stop.sh"
+        }
+      ]
+    }
+  ]
+}

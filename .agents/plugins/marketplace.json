@@ -1,0 +1,16 @@
+{
+  "name": "imbue-code-guardian",
+  "interface": {
+    "displayName": "Imbue Code Guardian"
+  },
+  "metadata": {
+    "description": "Code review enforcement tools by Imbue"
+  },
+  "plugins": [
+    {
+      "name": "imbue-code-guardian-codex",
+      "source": "./plugins/imbue-code-guardian-codex",
+      "description": "Automated code review enforcement. Blocks a session from finishing until autofix, architecture verification, and conversation review have run."
+    }
+  ]
+}

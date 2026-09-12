@@ -1,0 +1,5 @@
+{
+  "name": "imbue-code-guardian-antigravity",
+  "version": "0.1.0",
+  "description": "Automated code review enforcement for antigravity: blocks a session from finishing until autofix, architecture verification, and conversation review have run. Trigger + gate-check port of imbue-code-guardian; ported from the claude plugin's own config_utils.sh / stop_hook_gates.sh (verbatim, harness-agnostic already)."
+}

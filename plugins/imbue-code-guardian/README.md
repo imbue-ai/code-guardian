@@ -2,6 +2,20 @@
 
 Automated code review enforcement for Claude Code. When enabled, a Stop hook runs a full pipeline: commit enforcement, branch syncing, PR/CI checks, and review gates (autofix, architecture, conversation).
 
+**Also available for codex, antigravity, and opencode** — see
+[`plugins/imbue-code-guardian-codex`](../imbue-code-guardian-codex/README.md),
+[`plugins/imbue-code-guardian-antigravity`](../imbue-code-guardian-antigravity/README.md),
+and [`plugins/imbue-code-guardian-opencode`](../imbue-code-guardian-opencode/README.md).
+**Scope note**: those three ports currently cover the enforcement gate only
+(the Stop-hook trigger + "have the required reviews run" check below) —
+they do not yet run autofix/architecture/conversation review themselves,
+since that orchestration is genuinely Claude-Code-specific (spawns
+sub-agents via Claude's own Agent/Task tool, uses Claude's `` !`command` ``
+inline-bash frontmatter execution) and needs rewriting per harness, not
+just porting. Until that's done, those three ports will correctly detect
+and block on missing reviews, but the block message will point at
+Claude-only slash commands.
+
 **The hook is off by default.** Enable it after installing.
 
 ## Install
