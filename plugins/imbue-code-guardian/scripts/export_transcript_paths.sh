@@ -46,6 +46,11 @@ INCLUDE_AGENT_DIR="${INCLUDE_AGENT_DIR:-$(read_json_config "$SETTINGS" "verify_c
 # deliberately, knowing the reviewer cannot yet tell who is speaking in them.
 INCLUDE_SUBAGENTS="${INCLUDE_SUBAGENTS:-$(read_json_config "$SETTINGS" "verify_conversation.include_subagents" "false")}"
 
+if [[ -n "${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}" ]]; then
+    export INCLUDE_TRACKED INCLUDE_CURRENT INCLUDE_AGENT_DIR INCLUDE_SUBAGENTS
+    exec python3 "$(dirname "${BASH_SOURCE[0]}")/export_codex_transcript_paths.py"
+fi
+
 # ---------------------------------------------------------------------------
 # Track emitted paths to avoid duplicates
 # ---------------------------------------------------------------------------

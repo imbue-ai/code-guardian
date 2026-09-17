@@ -4,6 +4,9 @@ description: Automatically find and fix code issues in the current branch. Itera
 allowed-tools: Bash(git status *), Bash(git rev-parse *), Bash(git log *), Bash(git diff *), Bash(git revert *), Bash(git -C * status *), Bash(git -C * rev-parse *), Bash(git -C * log *), Bash(git -C * diff *), Bash(git -C * revert *), Bash(date -u +%Y-%m-%dT%H:%M:%SZ), Bash(echo "${GIT_BASE_BRANCH:-main}"), Bash(echo "${CODE_GUARDIAN_STOP_HOOK__BASE_BRANCH:-}"), Read, Write, Agent, AskUserQuestion
 ---
 
+When running in Codex, first read [Codex runtime guidance](../../references/codex.md).
+
+
 # Autofix
 
 Iteratively verify the current branch for code issues, plan and implement fixes (each in a separate commit), and repeat until clean. At the end, present each fix for user review and revert any the user does not want.

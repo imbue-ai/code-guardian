@@ -6,6 +6,18 @@ each version separately, so a release is a version bump plus a merge to `main`.
 
 This file starts at 0.5.0. For earlier releases, read the git history.
 
+## Unreleased
+
+- Add native Codex plugin packaging and marketplace installation, sharing the
+  existing skills, categories, review gates, and multi-repository pipeline.
+- Adapt the Stop hook's session root, transcript-path capture, and blocking output
+  for Codex while preserving Claude Code's hook behavior.
+- Discover Codex current, tracked, same-checkout, archived, and subagent rollouts;
+  parse messages, tool calls/results, and reasoning without losing source lines.
+- Conversation reviews now refuse to mark missing or empty transcripts as verified.
+- Document installation, hook trust, and launcher-specific enable expressions,
+  including Paseo's `PASEO_AGENT_ID`.
+
 ## [0.5.0]
 
 ### Changed

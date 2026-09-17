@@ -5,6 +5,9 @@ description: Review the conversation transcript for behavioral issues (misleadin
 allowed-tools: Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh*), Bash(python3 *${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh | python3 *${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py --total-size*), Bash(git rev-parse HEAD), Bash(wc *), Read, Write, Agent, AskUserQuestion
 ---
 
+When running in Codex, first read [Codex runtime guidance](../../references/codex.md).
+
+
 # Verify Conversation
 
 Orchestrate a review of the conversation transcript for behavioral issues. You handle setup and coordination; an agent does the actual review.
@@ -44,7 +47,7 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh
 
 The script outputs lines in the format `source\tpath`, where source is one of: `tracked`, `current`, `agent_dir`, or a subagent variant like `tracked:subagent`, `current:subagent`, etc. Parse each line to collect the files grouped by source.
 
-If this outputs nothing (no sessions found), skip to Step 5 and write an empty marker file.
+If discovery fails, outputs nothing, or the filtered size is zero, report that the conversation could not be reviewed. Do not create a verification marker.
 
 ### Step 2: Check Size and Choose Model
 
@@ -111,7 +114,7 @@ This ensures the next invocation knows which portions have already been covered.
 
 ### Step 6: Save Results
 
-If the agent found no issues or no transcript was available, use the Write tool (without checking if the directory exists) to ensure the output file `.reviewer/outputs/conversation/{hash}.json` exists (even if empty) -- it serves as the verification marker.
+If the agent completed the review and found no issues, use the Write tool (without checking if the directory exists) to ensure the output file `.reviewer/outputs/conversation/{hash}.json` exists (even if empty) -- it serves as the verification marker.
 
 ### Step 7: Report
 

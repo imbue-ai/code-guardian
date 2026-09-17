@@ -1,6 +1,6 @@
 ---
 name: reviewer-blocking-enable
-description: Restore the stop hook to blocking mode (default: block up to 3 times before letting through)
+description: "Restore the stop hook to blocking mode (default: block up to 3 times before letting through)"
 allowed-tools: Bash(jq *)
 ---
 

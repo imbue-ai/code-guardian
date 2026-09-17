@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Filter and format Claude Code session transcript JSONL files.
+"""Filter and format Claude Code and Codex session transcript JSONL files.
 
 Reads a JSONL transcript file and outputs a filtered, human-readable view
 with line numbers. The line numbers correspond to the original JSONL file,
@@ -61,7 +61,7 @@ def extract_text(content):
         for item in content:
             if not isinstance(item, dict):
                 continue
-            if item.get("type") == "text":
+            if item.get("type") in ("text", "input_text", "output_text", "summary_text"):
                 text = item.get("text", "")
                 if text.strip():
                     parts.append(text)
@@ -164,6 +164,24 @@ def classify_user_record(obj):
 
 def get_message_type(obj):
     """Determine the message type from a JSONL object."""
+    if obj.get("type") == "response_item":
+        payload = obj.get("payload", {})
+        kind = payload.get("type")
+        if kind == "message":
+            role = payload.get("role")
+            if role == "user":
+                metadata = payload.get("internal_chat_message_metadata_passthrough", {})
+                kinds = metadata.get("content_item_kinds", [])
+                if kinds and not any(kind.startswith("user.") for kind in kinds):
+                    return "harness-note"
+            return role
+        if kind in ("function_call", "custom_tool_call"):
+            return "tool_use"
+        if kind in ("function_call_output", "custom_tool_call_output"):
+            return "tool_result"
+        if kind == "reasoning":
+            return "thinking"
+        return f"codex:{kind}"
     # Top-level type field
     msg_type = obj.get("type", "")
 
@@ -195,6 +213,22 @@ def get_message_type(obj):
 
 def get_content(obj):
     """Extract the content field from a JSONL object."""
+    if obj.get("type") == "response_item":
+        payload = obj.get("payload", {})
+        kind = payload.get("type")
+        if kind == "message":
+            return payload.get("content", [])
+        if kind == "reasoning":
+            return payload.get("summary", [])
+        if kind in ("function_call", "custom_tool_call"):
+            arguments = payload.get("arguments", payload.get("input", ""))
+            return f"[{payload.get('name', '?')}] {_preview(str(arguments))}"
+        if kind in ("function_call_output", "custom_tool_call_output"):
+            output = payload.get("output", "")
+            return _preview(output if isinstance(output, str) else json.dumps(output))
+        return _preview(json.dumps(payload))
+    if obj.get("type") in ("session_meta", "event_msg", "turn_context"):
+        return _preview(json.dumps(obj.get("payload", {})))
     # Attachments carry their payload under a different key than ordinary messages, and
     # which key varies by subtype. Read it only for records the classifier also treats as
     # attachments, so that the text shown always comes from whatever the line is labeled as.
