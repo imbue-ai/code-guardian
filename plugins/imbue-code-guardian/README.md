@@ -26,8 +26,8 @@ alone does not authorize hooks: Codex skips new or changed hook definitions unti
 trusted. Start a new session to load the installed skills and hooks. This also
 applies when Codex is launched through Paseo.
 
-Use `$reviewer-enable`, `$autofix`, `$verify-architecture`, and
-`$verify-conversation` in Codex. The shared skills explain native tool and subagent
+Use `$imbue-code-guardian:reviewer-enable`, `$imbue-code-guardian:autofix`, `$imbue-code-guardian:verify-architecture`, and
+`$imbue-code-guardian:verify-conversation` in Codex. The shared skills explain native tool and subagent
 usage; review procedures and `.reviewer/` markers are shared with Claude Code.
 
 For local development, replace the marketplace source above with this checkout's

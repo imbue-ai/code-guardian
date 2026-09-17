@@ -162,6 +162,15 @@ class CodexTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
 
+    def test_gate_feedback_uses_native_skill_names(self):
+        manifest = self.root / "manifest"
+        manifest.write_text(".\tdeadbeef\tfeature\ttrue\n")
+        self.env["CODE_GUARDIAN_HARNESS"] = "codex"
+        result = self.run_script("stop_hook_gates.sh", str(manifest))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        for name in ("autofix", "verify-architecture", "verify-conversation"):
+            self.assertIn(f"$imbue-code-guardian:{name}", result.stderr)
+
     def test_claude_entry_point_preserves_disabled_behavior(self):
         result = self.run_script("stop_hook.sh", input="{}")
         self.assertEqual(result.returncode, 0, result.stderr)

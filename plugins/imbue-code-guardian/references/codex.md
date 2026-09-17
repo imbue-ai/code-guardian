@@ -3,7 +3,7 @@
 Use the same review procedure, categories, and verification markers as Claude
 Code. The differences below apply to every skill and to its delegated agents.
 
-- Invoke skills as `$autofix`, `$verify-architecture`, or `$verify-conversation`.
+- Invoke skills as `$imbue-code-guardian:autofix`, `$imbue-code-guardian:verify-architecture`, or `$imbue-code-guardian:verify-conversation`.
   Slash-command references in the shared instructions refer to these skills.
 - Resolve the plugin root from this skill's location: two directories above
   `skills/<name>/SKILL.md`. Substitute that absolute path for
