@@ -31,6 +31,9 @@ recorded by this plugin's Stop hook in this checkout. The hook stores only
 session identifiers and transcript paths in `.reviewer/outputs/codex/`, not
 transcript copies. Before the first Stop, discovery uses `CODEX_THREAD_ID`
 (or `CODEX_SESSION_ID`) and `CODEX_HOME` to find the current rollout.
+When the skill runs in a background subagent, discovery follows its recorded
+parent chain to the user-facing root conversation. A missing parent is an error;
+the review must not silently substitute the reviewer's own conversation.
 
 `include_all_agent_sessions` includes other top-level Codex sessions with the
 same working directory, rather than every project in the shared Codex home.

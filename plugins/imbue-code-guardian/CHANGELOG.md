@@ -16,6 +16,8 @@ This file starts at 0.5.0. For earlier releases, read the git history.
 - Discover Codex current, tracked, same-checkout, archived, and subagent rollouts;
   parse messages, tool calls/results, and reasoning without losing source lines.
 - Conversation reviews now refuse to mark missing or empty transcripts as verified.
+- Background Codex conversation reviews follow the parent thread chain to review
+  the user-facing conversation instead of the review agent's own transcript.
 - Document installation, hook trust, and launcher-specific enable expressions,
   including Paseo's `PASEO_AGENT_ID`.
 

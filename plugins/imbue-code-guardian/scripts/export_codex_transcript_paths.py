@@ -51,7 +51,17 @@ def discover():
     if include_current:
         if not session_id or not (current := locate(session_id)):
             raise ValueError("Current Codex transcript is unavailable; conversation review cannot pass.")
-        session_metadata(current)
+        # A background skill runner has its own CODEX_THREAD_ID. Conversation
+        # review belongs to the user-facing root, not the reviewer's delegation.
+        seen = {session_id}
+        while ancestor := parent_id(session_metadata(current)):
+            if ancestor in seen:
+                raise ValueError("Cycle in Codex transcript parent chain; conversation review cannot pass.")
+            seen.add(ancestor)
+            current = locate(ancestor)
+            if current is None:
+                raise ValueError(f"Parent Codex transcript is unavailable: {ancestor}")
+            session_id = ancestor
         paths[current] = "current"
 
     if include_tracked:

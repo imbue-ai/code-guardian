@@ -84,6 +84,37 @@ class CodexTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("unavailable", result.stderr)
 
+    def test_delegated_review_uses_root_conversation(self):
+        root = self.rollout("parent", archived=True)
+        child = self.rollout("child", parent="parent")
+        grandchild = self.rollout("grandchild", parent="child")
+        self.env.update(CODEX_THREAD_ID="grandchild", INCLUDE_TRACKED="false")
+        result = self.run_script("export_transcript_paths.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, f"current\t{root}\n")
+        self.env.update(INCLUDE_SUBAGENTS="true")
+        result = self.run_script("export_transcript_paths.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(set(result.stdout.splitlines()), {
+            f"current\t{root}", f"current:subagent\t{child}", f"current:subagent\t{grandchild}",
+        })
+
+    def test_delegated_review_missing_parent_fails_closed(self):
+        self.rollout("child", parent="missing")
+        self.env.update(CODEX_THREAD_ID="child")
+        result = self.run_script("export_transcript_paths.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Parent Codex transcript is unavailable", result.stderr)
+
+    def test_delegated_review_parent_cycle_fails_closed(self):
+        self.rollout("parent", parent="child")
+        self.rollout("child", parent="parent")
+        result = self.run_script("export_transcript_paths.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Cycle", result.stderr)
+
     def test_missing_tracked_fails_without_partial_output(self):
         self.rollout("parent")
         self.track("missing", self.root / "absent")
