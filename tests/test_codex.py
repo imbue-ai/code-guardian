@@ -159,7 +159,7 @@ class CodexTests(unittest.TestCase):
 
     def test_native_hook_blocks_dirty_worktree_and_records_transcript(self):
         self.init_repo()
-        result = self.run_script("stop_hook.sh", input=self.payload, cwd=self.root)
+        result = self.run_script("stop_hook_entrypoint.sh", input=self.payload, cwd=self.root)
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertEqual(result.stdout, "")
         self.assertIn("Uncommitted changes", result.stderr)
@@ -168,18 +168,18 @@ class CodexTests(unittest.TestCase):
 
     def test_disabled_hook_does_not_write_state(self):
         self.init_repo(enabled=False)
-        result = self.run_script("stop_hook.sh", input=self.payload)
+        result = self.run_script("stop_hook_entrypoint.sh", input=self.payload)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.repo / ".reviewer/outputs").exists())
 
     def test_native_hook_skips_non_git_session(self):
         self.env["PLUGIN_ROOT"] = str(PLUGIN)
-        result = self.run_script("stop_hook.sh", input=json.dumps({"cwd": str(self.repo)}))
+        result = self.run_script("stop_hook_entrypoint.sh", input=json.dumps({"cwd": str(self.repo)}))
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_malformed_native_input_blocks(self):
         self.env["PLUGIN_ROOT"] = str(PLUGIN)
-        result = self.run_script("stop_hook.sh", input="not json")
+        result = self.run_script("stop_hook_entrypoint.sh", input="not json")
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
 
@@ -193,7 +193,7 @@ class CodexTests(unittest.TestCase):
             self.assertIn(f"$imbue-code-guardian:{name}", result.stderr)
 
     def test_claude_entry_point_preserves_disabled_behavior(self):
-        result = self.run_script("stop_hook.sh", input="{}")
+        result = self.run_script("stop_hook_entrypoint.sh", input="{}")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
 

@@ -1,12 +1,13 @@
 # Changelog
 
 Notable changes to the `imbue-code-guardian` plugin. The version is the `version`
-field in `plugins/imbue-code-guardian/.claude-plugin/plugin.json`; Claude Code caches
-each version separately, so a release is a version bump plus a merge to `main`.
+field in both `plugins/imbue-code-guardian/.claude-plugin/plugin.json` and
+`plugins/imbue-code-guardian/.codex-plugin/plugin.json`. Keep them in sync. A release
+is a version bump plus a merge to `main`; each harness installs the versioned plugin.
 
 This file starts at 0.5.0. For earlier releases, read the git history.
 
-## Unreleased
+## [0.6.0]
 
 - Add native Codex plugin packaging and marketplace installation, sharing the
   existing skills, categories, review gates, and multi-repository pipeline.
