@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Print paths to Claude Code session JSONL files for all sessions.
+# Print paths to Claude Code and Codex session JSONL files.
 # Outputs one line per file: "<source>\t<path>"
 # where source is one of: tracked, current, agent_dir,
 # or a subagent variant like tracked:subagent, current:subagent, etc.
@@ -9,7 +9,7 @@
 # If the config file is not present, tracked and current default to true and
 # all_agent_sessions and subagents default to false (see each below).
 #
-# Session IDs for "tracked" are read from
+# For Claude, session IDs for "tracked" are read from
 # $MNGR_AGENT_STATE_DIR/claude_session_id_history (a mngr integration point --
 # see https://github.com/imbue-ai/mngr), which records the chain of sessions
 # belonging to one task. That env var is optional; without it "tracked" emits
@@ -29,7 +29,7 @@ SETTINGS=".reviewer/settings.json"
 # Env vars override config file (allows the skill to narrow scope per-invocation)
 INCLUDE_TRACKED="${INCLUDE_TRACKED:-$(read_json_config "$SETTINGS" "verify_conversation.include_tracked_sessions" "true")}"
 INCLUDE_CURRENT="${INCLUDE_CURRENT:-$(read_json_config "$SETTINGS" "verify_conversation.include_current_session" "true")}"
-# Despite the name, this is not scoped to the agent: it scans the whole projects
+# For Claude, this is not scoped to the agent: it scans the whole projects
 # tree, so it picks up unrelated repos and throwaway sessions. It is off by
 # default because tracked and current already name the sessions this gate is
 # scoped to. Turn it on to reach sessions neither of those knows about -- a task
@@ -51,9 +51,7 @@ if [[ -n "${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}" ]]; then
     exec python3 "$(dirname "${BASH_SOURCE[0]}")/export_codex_transcript_paths.py"
 fi
 
-# ---------------------------------------------------------------------------
 # Track emitted paths to avoid duplicates
-# ---------------------------------------------------------------------------
 declare -A _EMITTED
 
 _emit() {
@@ -77,9 +75,7 @@ _emit_subagents() {
     fi
 }
 
-# ---------------------------------------------------------------------------
 # Helper: resolve a session ID to a .jsonl file path (prints nothing if not found)
-# ---------------------------------------------------------------------------
 _find_session_file() {
     local session_id="$1"
     local search_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
@@ -91,9 +87,7 @@ _find_session_file() {
     fi
 }
 
-# ---------------------------------------------------------------------------
 # 1. Tracked sessions
-# ---------------------------------------------------------------------------
 _TRACKED_SESSION_IDS=()
 declare -A _SEEN_SIDS
 
@@ -119,9 +113,7 @@ if [ "$INCLUDE_TRACKED" = "true" ]; then
     done
 fi
 
-# ---------------------------------------------------------------------------
 # 2. Current session (only if not already emitted via tracked)
-# ---------------------------------------------------------------------------
 # Claude Code sets CLAUDE_CODE_SESSION_ID for the live session; mngr
 # (https://github.com/imbue-ai/mngr) exports MNGR_CLAUDE_SESSION_ID for the same
 # thing. Prefer mngr's, since under mngr it is the value the tracked history is
@@ -141,9 +133,7 @@ if [ "$INCLUDE_CURRENT" = "true" ] && [ -n "$CURRENT_SESSION_ID" ]; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
 # 3. Agent dir scan -- find ALL .jsonl files under CLAUDE_CONFIG_DIR/projects/
-# ---------------------------------------------------------------------------
 if [ "$INCLUDE_AGENT_DIR" = "true" ]; then
     search_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
     if [ -d "$search_dir" ]; then
