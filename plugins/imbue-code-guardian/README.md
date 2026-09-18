@@ -6,6 +6,9 @@ Automated code review enforcement for Claude Code and Codex. When enabled, a Sto
 
 ## Install
 
+Claude transcript discovery requires Bash 4 or newer. On macOS, put an installed
+modern Bash ahead of `/bin` on `PATH`; the system `/bin/bash` 3.2 is too old.
+
 ```
 claude plugin marketplace add imbue-ai/code-guardian && claude plugin install imbue-code-guardian@imbue-code-guardian
 ```
