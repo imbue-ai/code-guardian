@@ -4,12 +4,15 @@ description: Copy the default issue categories to .reviewer/ for customization. 
 allowed-tools: Bash(cp *), Bash(mkdir *), Read
 ---
 
+When running in Codex, first read [Codex runtime guidance](../../references/codex.md).
+
+
 Copy the default issue category files to `.reviewer/` so you can customize them for your project.
 
 1. Create the directory if needed: `mkdir -p .reviewer`
 2. Copy the defaults:
-   - `cp ${CLAUDE_PLUGIN_ROOT}/agents/categories/code-issue-categories.md .reviewer/code-issue-categories.md`
-   - `cp ${CLAUDE_PLUGIN_ROOT}/agents/categories/conversation-issue-categories.md .reviewer/conversation-issue-categories.md`
+   - `cp "${CLAUDE_PLUGIN_ROOT}/agents/categories/code-issue-categories.md" .reviewer/code-issue-categories.md`
+   - `cp "${CLAUDE_PLUGIN_ROOT}/agents/categories/conversation-issue-categories.md" .reviewer/conversation-issue-categories.md`
 
 If the files already exist in `.reviewer/`, ask the user whether to overwrite them.
 

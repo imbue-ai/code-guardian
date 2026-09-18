@@ -1,0 +1,20 @@
+{
+  "name": "imbue-code-guardian",
+  "interface": {
+    "displayName": "Imbue Code Guardian"
+  },
+  "plugins": [
+    {
+      "name": "imbue-code-guardian",
+      "source": {
+        "source": "local",
+        "path": "./plugins/imbue-code-guardian"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

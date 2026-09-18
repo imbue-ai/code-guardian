@@ -5,6 +5,9 @@ description: Review the conversation transcript for behavioral issues (misleadin
 allowed-tools: Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh*), Bash(python3 *${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py *), Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh | python3 *${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py --total-size*), Bash(git rev-parse HEAD), Bash(wc *), Read, Write, Agent, AskUserQuestion
 ---
 
+When running in Codex, first read [Codex runtime guidance](../../references/codex.md).
+
+
 # Verify Conversation
 
 Orchestrate a review of the conversation transcript for behavioral issues. You handle setup and coordination; an agent does the actual review.
@@ -26,7 +29,7 @@ If the user provides arguments, they serve as additional instructions for this r
 To apply overrides, set env vars before calling the discovery script. The env vars are: `INCLUDE_TRACKED`, `INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, `INCLUDE_SUBAGENTS` (each `true` or `false`). For example, "only tracked sessions" means:
 
 ```bash
-INCLUDE_TRACKED=true INCLUDE_CURRENT=false INCLUDE_AGENT_DIR=false INCLUDE_SUBAGENTS=false bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh
+INCLUDE_TRACKED=true INCLUDE_CURRENT=false INCLUDE_AGENT_DIR=false INCLUDE_SUBAGENTS=false bash "${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh"
 ```
 
 Each variable defaults to the setting of the same name under `verify_conversation`,
@@ -36,22 +39,27 @@ so an override only needs to name the sources it is changing.
 
 ### Step 1: Find Session Files
 
+Before running discovery commands, export `CODE_GUARDIAN_HARNESS=claude` in Claude
+Code or `CODE_GUARDIAN_HARNESS=codex` in Codex. Set it in each shell invocation
+that runs discovery. A child CLI can inherit the parent CLI's session variables,
+so the runtime must be selected explicitly for this review.
+
 Run the export transcript script to discover session file paths:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh"
 ```
 
 The script outputs lines in the format `source\tpath`, where source is one of: `tracked`, `current`, `agent_dir`, or a subagent variant like `tracked:subagent`, `current:subagent`, etc. Parse each line to collect the files grouped by source.
 
-If this outputs nothing (no sessions found), skip to Step 5 and write an empty marker file.
+If discovery fails, outputs nothing, or the filtered size is zero, report that the conversation could not be reviewed. Do not create a verification marker.
 
 ### Step 2: Check Size and Choose Model
 
 Get the total filtered size across all session files by piping the export script output to the filter script:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py --total-size
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py" --total-size
 ```
 
 This outputs a single number (total bytes).
@@ -111,7 +119,7 @@ This ensures the next invocation knows which portions have already been covered.
 
 ### Step 6: Save Results
 
-If the agent found no issues or no transcript was available, use the Write tool (without checking if the directory exists) to ensure the output file `.reviewer/outputs/conversation/{hash}.json` exists (even if empty) -- it serves as the verification marker.
+If the agent completed the review and found no issues, use the Write tool (without checking if the directory exists) to ensure the output file `.reviewer/outputs/conversation/{hash}.json` exists (even if empty) -- it serves as the verification marker.
 
 ### Step 7: Report
 

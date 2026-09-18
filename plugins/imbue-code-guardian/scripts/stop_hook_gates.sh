@@ -29,6 +29,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/config_utils.sh"
 
 MANIFEST="${1:?usage: stop_hook_gates.sh <manifest_file>}"
+SKILL_PREFIX="/"
+if [[ "${CODE_GUARDIAN_HARNESS:-}" == "codex" ]]; then
+    SKILL_PREFIX='$imbue-code-guardian:'
+fi
 
 # Build a command hint by appending extra instructions to a base command.
 # `_root_cmd` reads a single extra from the ROOT config (used for the
@@ -63,7 +67,7 @@ _append_extras() {
     printf '%s %s' "$base" "${out[*]}"
 }
 
-CONVO_CMD=$(_root_cmd "/verify-conversation" "verify_conversation.append_to_prompt")
+CONVO_CMD=$(_root_cmd "${SKILL_PREFIX}verify-conversation" "verify_conversation.append_to_prompt")
 
 # Dirs (by gate) still missing a marker.
 AUTOFIX_MISSING=()
@@ -110,13 +114,13 @@ while IFS=$'\t' read -r dir head branch has_changes; do
 done < "$MANIFEST"
 
 # Build the unified command hints now that we know every changed dir's extras.
-AUTOFIX_CMD="/autofix"
+AUTOFIX_CMD="${SKILL_PREFIX}autofix"
 if [[ ${#AUTOFIX_EXTRAS[@]} -gt 0 ]]; then
-    AUTOFIX_CMD=$(_append_extras "/autofix" "${AUTOFIX_EXTRAS[@]}")
+    AUTOFIX_CMD=$(_append_extras "${SKILL_PREFIX}autofix" "${AUTOFIX_EXTRAS[@]}")
 fi
-ARCH_CMD="/verify-architecture"
+ARCH_CMD="${SKILL_PREFIX}verify-architecture"
 if [[ ${#ARCH_EXTRAS[@]} -gt 0 ]]; then
-    ARCH_CMD=$(_append_extras "/verify-architecture" "${ARCH_EXTRAS[@]}")
+    ARCH_CMD=$(_append_extras "${SKILL_PREFIX}verify-architecture" "${ARCH_EXTRAS[@]}")
 fi
 
 # Conversation review is a single, session-scoped gate keyed on the root HEAD.
