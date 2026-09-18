@@ -29,7 +29,7 @@ If the user provides arguments, they serve as additional instructions for this r
 To apply overrides, set env vars before calling the discovery script. The env vars are: `INCLUDE_TRACKED`, `INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, `INCLUDE_SUBAGENTS` (each `true` or `false`). For example, "only tracked sessions" means:
 
 ```bash
-INCLUDE_TRACKED=true INCLUDE_CURRENT=false INCLUDE_AGENT_DIR=false INCLUDE_SUBAGENTS=false bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh
+INCLUDE_TRACKED=true INCLUDE_CURRENT=false INCLUDE_AGENT_DIR=false INCLUDE_SUBAGENTS=false bash "${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh"
 ```
 
 Each variable defaults to the setting of the same name under `verify_conversation`,
@@ -47,7 +47,7 @@ so the runtime must be selected explicitly for this review.
 Run the export transcript script to discover session file paths:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh"
 ```
 
 The script outputs lines in the format `source\tpath`, where source is one of: `tracked`, `current`, `agent_dir`, or a subagent variant like `tracked:subagent`, `current:subagent`, etc. Parse each line to collect the files grouped by source.
@@ -59,7 +59,7 @@ If discovery fails, outputs nothing, or the filtered size is zero, report that t
 Get the total filtered size across all session files by piping the export script output to the filter script:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh | python3 ${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py --total-size
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/export_transcript_paths.sh" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/filter_transcript.py" --total-size
 ```
 
 This outputs a single number (total bytes).

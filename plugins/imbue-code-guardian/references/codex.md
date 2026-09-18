@@ -7,7 +7,8 @@ Code. The differences below apply to every skill and to its delegated agents.
   Slash-command references in the shared instructions refer to these skills.
 - Resolve the plugin root from this skill's location: two directories above
   `skills/<name>/SKILL.md`. Substitute that absolute path for
-  `${CLAUDE_PLUGIN_ROOT}` in shell examples and file references. Codex sets that
+  `${CLAUDE_PLUGIN_ROOT}` in shell examples and file references. Keep shell path
+  arguments quoted, including after substituting the absolute path. Codex sets that
   environment variable for hooks, but it may not be set in agent shell tools.
 - Use native Codex shell/file tools instead of Claude's Bash, Read, and Write.
   Create missing output directories before writing files. Treat allowed-tools
