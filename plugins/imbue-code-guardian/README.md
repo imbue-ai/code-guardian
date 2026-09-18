@@ -143,7 +143,10 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 
 ## Conversation transcripts
 
-The discovery script selects Claude or Codex from the running session's environment.
+The review skill explicitly selects its runtime with `CODE_GUARDIAN_HARNESS=claude`
+or `CODE_GUARDIAN_HARNESS=codex`. Direct script callers should set this override
+when nesting one CLI inside the other; otherwise discovery uses session environment
+variables, which child processes may inherit.
 The filter accepts both Claude JSONL and Codex rollout JSONL, keeping original line
 numbers for incremental reviews. Codex's `response_item` records provide messages,
 tool calls/results, and reasoning summaries; duplicate event records are hidden

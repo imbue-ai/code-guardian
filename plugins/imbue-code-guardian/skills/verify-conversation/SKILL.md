@@ -39,6 +39,11 @@ so an override only needs to name the sources it is changing.
 
 ### Step 1: Find Session Files
 
+Before running discovery commands, export `CODE_GUARDIAN_HARNESS=claude` in Claude
+Code or `CODE_GUARDIAN_HARNESS=codex` in Codex. Set it in each shell invocation
+that runs discovery. A child CLI can inherit the parent CLI's session variables,
+so the runtime must be selected explicitly for this review.
+
 Run the export transcript script to discover session file paths:
 
 ```bash

@@ -100,6 +100,27 @@ class CodexTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, f"tracked\t{previous}\n")
 
+    def test_explicit_harness_selects_transcripts_in_mixed_environment(self):
+        codex_path = self.rollout("parent")
+        claude_home = self.root / "claude home"
+        claude_path = claude_home / "projects/project/claude-session.jsonl"
+        claude_path.parent.mkdir(parents=True)
+        claude_path.write_text('{"type":"user","message":{"content":"hello"}}\n')
+        self.env.update(CLAUDE_CONFIG_DIR=str(claude_home), CLAUDE_CODE_SESSION_ID="claude-session")
+        for harness, expected in (("claude", claude_path), ("codex", codex_path)):
+            with self.subTest(harness=harness):
+                self.env["CODE_GUARDIAN_HARNESS"] = harness
+                result = self.run_script("export_transcript_paths.sh")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, f"current\t{expected}\n")
+
+    def test_invalid_harness_fails_without_selecting_a_transcript(self):
+        self.env["CODE_GUARDIAN_HARNESS"] = "unknown"
+        result = self.run_script("export_transcript_paths.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Unsupported CODE_GUARDIAN_HARNESS", result.stderr)
+
     def test_codex_filter_retains_provenance_order_and_line_numbers(self):
         payloads = [
             {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "please fix it"}]},
