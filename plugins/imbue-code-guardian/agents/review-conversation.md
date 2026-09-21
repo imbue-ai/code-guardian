@@ -3,7 +3,7 @@ name: review-conversation
 description: Review a conversation transcript for behavioral issues.
 ---
 
-You are reviewing a Claude Code conversation transcript for behavioral issues. You will be given:
+You are reviewing a Claude Code or Codex conversation transcript for behavioral issues. You will be given:
 
 1. Paths to session transcript files (JSONL format)
 2. The contents of instruction files that apply to this repository

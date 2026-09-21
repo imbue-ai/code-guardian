@@ -1,14 +1,43 @@
 # imbue-code-guardian
 
-Automated code review enforcement for Claude Code. When enabled, a Stop hook runs a full pipeline: commit enforcement, branch syncing, PR/CI checks, and review gates (autofix, architecture, conversation).
+Automated code review enforcement for Claude Code and Codex. When enabled, a Stop hook runs a full pipeline: commit enforcement, branch syncing, PR/CI checks, and review gates (autofix, architecture, conversation).
 
 **The hook is off by default.** Enable it after installing.
 
 ## Install
 
+Claude transcript discovery requires Bash 4 or newer. On macOS, put an installed
+modern Bash ahead of `/bin` on `PATH`; the system `/bin/bash` 3.2 is too old.
+
 ```
 claude plugin marketplace add imbue-ai/code-guardian && claude plugin install imbue-code-guardian@imbue-code-guardian
 ```
+
+### Codex
+
+Requires a Codex version with plugin Stop hooks (tested with 0.154.0), plus
+`bash`, `git`, `jq`, and `python3`. CI checks also need an authenticated `gh`.
+Claude Code is not required for Codex installation or reviews.
+
+```sh
+codex plugin marketplace add imbue-ai/code-guardian
+codex plugin add imbue-code-guardian@imbue-code-guardian
+```
+
+Review and trust the installed hook using `/hooks` in the Codex CLI. Installation
+alone does not authorize hooks: Codex skips new or changed hook definitions until
+trusted. Start a new session to load the installed skills and hooks. This also
+applies when Codex is launched through Paseo.
+
+Use `$imbue-code-guardian:reviewer-enable`, `$imbue-code-guardian:autofix`, `$imbue-code-guardian:verify-architecture`, and
+`$imbue-code-guardian:verify-conversation` in Codex. The shared skills explain native tool and subagent
+usage; review procedures and `.reviewer/` markers are shared with Claude Code.
+
+For local development, replace the marketplace source above with this checkout's
+absolute path. To test an unmerged branch, use
+`codex plugin marketplace add imbue-ai/code-guardian --ref <branch>`.
+
+See [Codex hooks](https://learn.chatgpt.com/docs/hooks) for the trust requirements.
 
 ## Enabling the stop hook
 
@@ -24,11 +53,20 @@ The argument is an optional shell expression controlling when enforcement fires.
 /imbue-code-guardian:reviewer-enable test -n "${MY_AGENT_ENV_VAR:-}"
 ```
 
+To enable only under mngr, Sculptor, or Paseo, set `stop_hook.enabled_when` in
+`.reviewer/settings.json` to:
+
+```json
+"test -n \"${MNGR_AGENT_STATE_DIR:-}\" || test -n \"${SCULPTOR_API_PORT:-}\" || test -n \"${PASEO_AGENT_ID:-}\""
+```
+
+Paseo launches the installed provider CLI, so no Paseo-specific hook is needed.
+
 To turn enforcement off entirely, run `/imbue-code-guardian:reviewer-disable`; re-running `reviewer-enable` restores the prior expression. Individual gates toggle separately via the per-gate skills below (e.g. `reviewer-ci-disable`).
 
 ## Pipeline
 
-When enabled, the stop hook orchestrator runs every time Claude finishes a response. It reviews the root repo plus any [additional directories](#reviewing-multiple-directories). The full pipeline:
+When enabled, the stop hook orchestrator runs every time the agent finishes a response. It reviews the root repo plus any [additional directories](#reviewing-multiple-directories). The full pipeline:
 
 1. **Stuck agent detection** -- if the hook has blocked N consecutive times at the same state (across all reviewed dirs), let the agent through to prevent infinite loops.
 2. **Per-dir non-review steps** (run concurrently, one set per reviewed dir, each scoped to that repo):
@@ -106,6 +144,35 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 | `verify_architecture.is_enabled` | bool | `true` | Enable architecture verification gate (per-branch). |
 | `verify_architecture.append_to_prompt` | string | `""` | Extra instructions appended to verify-architecture skill invocation. |
 
+## Conversation transcripts
+
+The review skill explicitly selects its runtime with `CODE_GUARDIAN_HARNESS=claude`
+or `CODE_GUARDIAN_HARNESS=codex`. Direct script callers should set this override
+when nesting one CLI inside the other; otherwise discovery uses session environment
+variables, which child processes may inherit.
+The filter accepts both Claude JSONL and Codex rollout JSONL, keeping original line
+numbers for incremental reviews. Codex's `response_item` records provide messages,
+tool calls/results, and reasoning summaries; duplicate event records are hidden
+by default. Injected messages with harness provenance are not labeled as human input.
+
+For Codex, the default sources are the current thread and prior threads whose
+Stop hooks recorded a transcript path in this checkout's `.reviewer/outputs/codex/`.
+Before the first Stop, the current rollout is located by `CODEX_THREAD_ID` (or
+`CODEX_SESSION_ID`) beneath `CODEX_HOME` (default `~/.codex`). Archived rollouts
+are also searched. Missing current or tracked transcripts fail discovery and must
+not create a successful review marker.
+
+`verify_conversation.include_all_agent_sessions` adds top-level Codex rollouts
+whose recorded working directory matches this checkout; it does not pull in other
+projects from a shared Codex home. `include_subagents` recursively includes rollouts
+whose metadata names one of the selected threads as parent. Claude discovery keeps
+its existing mngr history and project-tree behavior. The `INCLUDE_TRACKED`,
+`INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, and `INCLUDE_SUBAGENTS` environment overrides
+work for both harnesses.
+
+Codex's transcript format is not a stable API. If a rollout is missing or cannot be
+read, the skill reports that limitation rather than treating an empty review as a pass.
+
 ## Reviewing multiple directories
 
 By default the hook reviews only the repo it runs in. To also review other git working directories -- for example a separately-versioned repo nested inside your checkout (its own `.git`, remote, and base branch, gitignored from the outer repo) -- list them in the **root** config:
@@ -150,3 +217,11 @@ The hook only runs on commits that touch the generator or one of the generated f
 - **analyze-architecture** -- Evaluates whether branch changes fit codebase patterns (used by verify-architecture)
 - **validate-diff** -- Quick sanity check on a branch's diff (used by autofix and verify-architecture)
 - **review-conversation** -- Reviews conversation transcripts for behavioral issues (used by verify-conversation)
+
+## Tests
+
+```sh
+python3 tests/test_filter_transcript.py
+python3 -m unittest discover -s tests -p test_codex.py
+bash tests/test_multi_dir_stop_hook.sh
+```

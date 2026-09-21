@@ -1,0 +1,27 @@
+{
+  "name": "imbue-code-guardian",
+  "version": "0.6.0",
+  "description": "Automated code review enforcement. Runs autofix, architecture verification, and conversation review -- and blocks sessions from finishing until they pass.",
+  "author": {
+    "name": "Imbue"
+  },
+  "repository": "https://github.com/imbue-ai/code-guardian",
+  "keywords": [
+    "code-review",
+    "autofix",
+    "architecture",
+    "enforcement"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Code Guardian",
+    "shortDescription": "Enforce code, architecture, and conversation reviews.",
+    "longDescription": "Automated code review enforcement. Runs autofix, architecture verification, and conversation review -- and blocks sessions from finishing until they pass.",
+    "developerName": "Imbue",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": [
+      "Review this branch with code-guardian."
+    ]
+  }
+}

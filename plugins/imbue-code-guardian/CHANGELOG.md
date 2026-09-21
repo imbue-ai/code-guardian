@@ -1,10 +1,25 @@
 # Changelog
 
 Notable changes to the `imbue-code-guardian` plugin. The version is the `version`
-field in `plugins/imbue-code-guardian/.claude-plugin/plugin.json`; Claude Code caches
-each version separately, so a release is a version bump plus a merge to `main`.
+field in both `plugins/imbue-code-guardian/.claude-plugin/plugin.json` and
+`plugins/imbue-code-guardian/.codex-plugin/plugin.json`. Keep them in sync. A release
+is a version bump plus a merge to `main`; each harness installs the versioned plugin.
 
 This file starts at 0.5.0. For earlier releases, read the git history.
+
+## [0.6.0]
+
+- Add native Codex plugin packaging and marketplace installation, sharing the
+  existing skills, categories, review gates, and multi-repository pipeline.
+- Adapt the Stop hook's session root, transcript-path capture, and blocking output
+  for Codex while preserving Claude Code's hook behavior.
+- Discover Codex current, tracked, same-checkout, archived, and subagent rollouts;
+  parse messages, tool calls/results, and reasoning without losing source lines.
+- Conversation reviews now refuse to mark missing or empty transcripts as verified.
+- Background Codex conversation reviews follow the parent thread chain to review
+  the user-facing conversation instead of the review agent's own transcript.
+- Document installation, hook trust, and launcher-specific enable expressions,
+  including Paseo's `PASEO_AGENT_ID`.
 
 ## [0.5.0]
 
