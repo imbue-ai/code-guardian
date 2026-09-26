@@ -22,8 +22,11 @@ task when running under mngr. The arguments below widen or narrow that.
 If the user provides arguments, they serve as additional instructions for this run. For example:
 - `/verify-conversation only review the current session` -- drop the tracked chain
 - `/verify-conversation only review tracked sessions` -- the task chain, without the live session
-- `/verify-conversation include all sessions` -- add every session in the projects tree,
-  which reaches sessions tracked and current do not know about but also pulls in unrelated work
+- `/verify-conversation include all sessions` -- add every session in the agent's own projects tree,
+  which reaches sessions tracked and current do not know about but also pulls in unrelated work.
+  In Claude Code this needs `CLAUDE_CONFIG_DIR` set to a per-agent config dir (as mngr does in isolated mode);
+  when it is unset, discovery skips this source and says so on stderr, since `~/.claude` holds
+  every session on the machine
 - `/verify-conversation include subagents` -- add subagent transcripts, which are excluded by default
 
 To apply overrides, set env vars before calling the discovery script. The env vars are: `INCLUDE_TRACKED`, `INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, `INCLUDE_SUBAGENTS` (each `true` or `false`). For example, "only tracked sessions" means:
