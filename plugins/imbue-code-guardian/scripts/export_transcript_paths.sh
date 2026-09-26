@@ -17,7 +17,9 @@
 # The "current" session is resolved from $MNGR_CLAUDE_SESSION_ID, falling back
 # to $CLAUDE_CODE_SESSION_ID, which Claude Code sets natively -- so the live
 # session is covered with or without mngr.
-# The agent_dir mode scans $CLAUDE_CONFIG_DIR/projects/ for all .jsonl files.
+# The agent_dir mode scans $CLAUDE_CONFIG_DIR/projects/ for all .jsonl files. It
+# runs only when CLAUDE_CONFIG_DIR is set, as mngr does for an agent with an
+# isolated config dir; otherwise it is skipped with a note on stderr.
 
 set -euo pipefail
 
@@ -29,12 +31,13 @@ SETTINGS=".reviewer/settings.json"
 # Env vars override config file (allows the skill to narrow scope per-invocation)
 INCLUDE_TRACKED="${INCLUDE_TRACKED:-$(read_json_config "$SETTINGS" "verify_conversation.include_tracked_sessions" "true")}"
 INCLUDE_CURRENT="${INCLUDE_CURRENT:-$(read_json_config "$SETTINGS" "verify_conversation.include_current_session" "true")}"
-# For Claude, this is not scoped to the agent: it scans the whole projects
-# tree, so it picks up unrelated repos and throwaway sessions. It is off by
-# default because tracked and current already name the sessions this gate is
-# scoped to. Turn it on to reach sessions neither of those knows about -- a task
-# resumed under a new id outside mngr, for instance, since worktrees put a single
-# task's sessions under several project directories.
+# For Claude, this scans the whole projects tree of $CLAUDE_CONFIG_DIR. That is
+# one agent's history only when the launcher gives each agent its own config dir,
+# as mngr does in isolated mode, so the scan is skipped when CLAUDE_CONFIG_DIR is
+# unset: the default ~/.claude holds every session ever run on the machine. Even
+# a per-agent dir can hold throwaway sessions, so this is off by default; tracked
+# and current already name the sessions this gate is scoped to. Turn it on to
+# reach sessions in the agent's config dir that neither of those knows about.
 INCLUDE_AGENT_DIR="${INCLUDE_AGENT_DIR:-$(read_json_config "$SETTINGS" "verify_conversation.include_all_agent_sessions" "false")}"
 
 # Subagent transcripts are off by default: a subagent's `user` records are not the
@@ -130,9 +133,7 @@ fi
 # (https://github.com/imbue-ai/mngr) exports MNGR_CLAUDE_SESSION_ID for the same
 # thing. Prefer mngr's, since under mngr it is the value the tracked history is
 # keyed on, and fall back to the native one so this section still resolves when
-# the gate runs outside mngr. Without a fallback the only source left there is
-# the machine-wide agent_dir scan, which is a far blunter instrument than the
-# session the gate is scoped to review.
+# the gate runs outside mngr, where nothing else finds the live session.
 CURRENT_SESSION_ID="${MNGR_CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ "$INCLUDE_CURRENT" = "true" ] && [ -n "$CURRENT_SESSION_ID" ]; then
     if [ -z "${_SEEN_SIDS[$CURRENT_SESSION_ID]:-}" ]; then
@@ -146,8 +147,10 @@ if [ "$INCLUDE_CURRENT" = "true" ] && [ -n "$CURRENT_SESSION_ID" ]; then
 fi
 
 # 3. Agent dir scan -- find ALL .jsonl files under CLAUDE_CONFIG_DIR/projects/
-if [ "$INCLUDE_AGENT_DIR" = "true" ]; then
-    search_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+if [ "$INCLUDE_AGENT_DIR" = "true" ] && [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
+    echo "Skipping include_all_agent_sessions: CLAUDE_CONFIG_DIR is unset, and the default ~/.claude holds every session on this machine, not one agent's." >&2
+elif [ "$INCLUDE_AGENT_DIR" = "true" ]; then
+    search_dir="$CLAUDE_CONFIG_DIR/projects"
     if [ -d "$search_dir" ]; then
         while IFS= read -r jsonl_file; do
             [ -f "$jsonl_file" ] || continue

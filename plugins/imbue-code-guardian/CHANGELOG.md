@@ -7,6 +7,21 @@ is a version bump plus a merge to `main`; each harness installs the versioned pl
 
 This file starts at 0.5.0. For earlier releases, read the git history.
 
+## [0.6.1]
+
+- `include_all_agent_sessions` no longer scans the machine-wide `~/.claude/projects`
+  tree in Claude Code. The scan is meant for one agent's own config dir, which mngr
+  provides by setting `CLAUDE_CONFIG_DIR` for an agent with an isolated config dir.
+  With the variable unset (plain Claude Code, Paseo, Sculptor) it fell back to every
+  session ever run on the machine -- on one machine 3309 files and 139MB filtered,
+  far past the review's 3MB limit, so the conversation gate could not run. It now
+  runs only when `CLAUDE_CONFIG_DIR` is set, and otherwise skips with a note on
+  stderr. Codex discovery already limits this source to the current checkout and is
+  unchanged.
+
+- Claude transcript discovery exited 1 when `include_all_agent_sessions` was on and
+  `include_subagents` off, despite printing a correct transcript list.
+
 ## [0.6.0]
 
 - Add native Codex plugin packaging and marketplace installation, sharing the
