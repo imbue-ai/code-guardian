@@ -156,7 +156,9 @@ if [ "$INCLUDE_AGENT_DIR" = "true" ]; then
                 */subagents/*) continue ;;
             esac
             _emit "agent_dir" "$jsonl_file"
-            [ "$INCLUDE_SUBAGENTS" = "true" ] && _emit_subagents "agent_dir" "$jsonl_file"
+            if [ "$INCLUDE_SUBAGENTS" = "true" ]; then
+                _emit_subagents "agent_dir" "$jsonl_file"
+            fi
         done < <(find "$search_dir" -name '*.jsonl' 2>/dev/null | sort)
     fi
 fi
