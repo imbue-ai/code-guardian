@@ -165,10 +165,17 @@ not create a successful review marker.
 `verify_conversation.include_all_agent_sessions` adds top-level Codex rollouts
 whose recorded working directory matches this checkout; it does not pull in other
 projects from a shared Codex home. `include_subagents` recursively includes rollouts
-whose metadata names one of the selected threads as parent. Claude discovery keeps
-its existing mngr history and project-tree behavior. The `INCLUDE_TRACKED`,
-`INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, and `INCLUDE_SUBAGENTS` environment overrides
-work for both harnesses.
+whose metadata names one of the selected threads as parent.
+
+For Claude, the default sources are the current session and, under mngr, the
+tracked session chain. `include_all_agent_sessions` adds every session under
+`$CLAUDE_CONFIG_DIR/projects`, and runs only when `CLAUDE_CONFIG_DIR` is set, as
+mngr does for an agent with an isolated config dir. When it is unset (plain Claude
+Code, Paseo, Sculptor), the scan is skipped with a note on stderr, because the
+default `~/.claude` holds every session on the machine rather than one agent's.
+
+The `INCLUDE_TRACKED`, `INCLUDE_CURRENT`, `INCLUDE_AGENT_DIR`, and
+`INCLUDE_SUBAGENTS` environment overrides work for both harnesses.
 
 Codex's transcript format is not a stable API. If a rollout is missing or cannot be
 read, the skill reports that limitation rather than treating an empty review as a pass.
@@ -223,5 +230,6 @@ The hook only runs on commits that touch the generator or one of the generated f
 ```sh
 python3 tests/test_filter_transcript.py
 python3 -m unittest discover -s tests -p test_codex.py
+python3 -m unittest discover -s tests -p test_export_transcript_paths.py
 bash tests/test_multi_dir_stop_hook.sh
 ```
