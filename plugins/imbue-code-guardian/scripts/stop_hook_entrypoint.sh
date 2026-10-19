@@ -1,11 +1,37 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INPUT=$(cat)
+# Resolved without starting a process: this hook runs at the end of every turn,
+# usually just to find it is switched off, and each process start is slow on a
+# sandboxed host.
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+[[ "$SCRIPT_PATH" == /* ]] || SCRIPT_PATH="$PWD/$SCRIPT_PATH"
+SCRIPT_DIR="${SCRIPT_PATH%/*}"
+INPUT=""
+IFS= read -r -d '' INPUT || true
+
+# shellcheck source=config_utils.sh
+source "$SCRIPT_DIR/config_utils.sh"
+
+# Exit when the root config switches the hook off, before starting the
+# orchestrator. It anchors to the same directory and reads the same setting, so
+# this only skips work that would end in the same exit 0.
+stop_hook_is_switched_off() { # <project_dir>
+    local enabled_when
+    enabled_when=$(read_json_config "$1/.reviewer/settings.json" stop_hook.enabled_when "")
+    [[ -z "$enabled_when" || "$enabled_when" == "false" ]] && return 0
+    ! bash -c "$enabled_when" 2>/dev/null
+}
 
 # PLUGIN_ROOT is set by Codex for plugin hooks; Claude sets CLAUDE_PLUGIN_ROOT.
 if [[ -z "${PLUGIN_ROOT:-}" ]]; then
+    PROJECT_DIR="$PWD"
+    if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]] && [[ -d "$CLAUDE_PROJECT_DIR" ]]; then
+        PROJECT_DIR="$CLAUDE_PROJECT_DIR"
+    fi
+    if stop_hook_is_switched_off "$PROJECT_DIR"; then
+        exit 0
+    fi
     exec bash "$SCRIPT_DIR/stop_hook_orchestrator.sh" <<< "$INPUT"
 fi
 
@@ -20,10 +46,7 @@ if ! CLAUDE_PROJECT_DIR=$(git -C "$SESSION_CWD" rev-parse --show-toplevel 2>/dev
 fi
 cd "$CLAUDE_PROJECT_DIR"
 
-# shellcheck source=config_utils.sh
-source "$SCRIPT_DIR/config_utils.sh"
-ENABLED_WHEN=$(read_json_config .reviewer/settings.json stop_hook.enabled_when "")
-if [[ -z "$ENABLED_WHEN" ]] || ! bash -c "$ENABLED_WHEN"; then
+if stop_hook_is_switched_off "$CLAUDE_PROJECT_DIR"; then
     exit 0
 fi
 

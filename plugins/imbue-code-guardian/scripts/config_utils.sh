@@ -22,6 +22,19 @@ set -euo pipefail
 # Env vars take precedence over both, so per-process / per-agent overrides
 # work without touching any file.
 
+# Set the variable named $1 to the env-var override name for config key $2.
+# Built without starting a process where bash allows: the Stop hook reads its
+# config on every turn, and each process start is slow on a sandboxed host.
+_config_env_var_name() {
+    local name="${2//./__}"
+    if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+        name="${name^^}"
+    else
+        name=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+    fi
+    printf -v "$1" 'CODE_GUARDIAN_%s' "$name"
+}
+
 # Read a single key from a JSON config file with env-var and local-override
 # support.
 # Args: <config_path> <key> <default>
@@ -33,7 +46,7 @@ read_json_config() {
 
     # Env-var override: CODE_GUARDIAN_<KEY uppercased, dots -> __>
     local env_var
-    env_var="CODE_GUARDIAN_$(echo "$key" | tr '[:lower:]' '[:upper:]' | sed 's/\./__/g')"
+    _config_env_var_name env_var "$key"
     if [ -n "${!env_var:-}" ]; then
         echo "${!env_var}"
         return
@@ -42,10 +55,8 @@ read_json_config() {
     # Derive .local.json path: foo/bar.json -> foo/bar.local.json
     local local_path="${config_path%.json}.local.json"
 
-    # Build a jq path expression from the key. Dotted keys like "ci.is_enabled"
-    # become the jq path .ci.is_enabled; simple keys like "enabled" become .enabled.
-    local jq_path
-    jq_path=$(echo "$key" | sed 's/\././g; s/^/./')
+    # Dotted keys like "ci.is_enabled" are already jq paths once prefixed with a dot
+    local jq_path=".$key"
 
     # Local overrides take precedence
     if [ -f "$local_path" ]; then
@@ -76,15 +87,14 @@ read_json_array() {
     local key="$2"
 
     local env_var
-    env_var="CODE_GUARDIAN_$(echo "$key" | tr '[:lower:]' '[:upper:]' | sed 's/\./__/g')"
+    _config_env_var_name env_var "$key"
     if [ -n "${!env_var:-}" ]; then
         echo "${!env_var}" | jq -r '.[]' 2>/dev/null
         return
     fi
 
     local local_path="${config_path%.json}.local.json"
-    local jq_path
-    jq_path=$(echo "$key" | sed 's/\././g; s/^/./')
+    local jq_path=".$key"
 
     local f
     for f in "$local_path" "$config_path"; do
