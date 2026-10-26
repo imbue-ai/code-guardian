@@ -7,6 +7,16 @@ is a version bump plus a merge to `main`; each harness installs the versioned pl
 
 This file starts at 0.5.0. For earlier releases, read the git history.
 
+## [0.6.2]
+
+- The Stop hook exits sooner when `stop_hook.enabled_when` switches it off. In
+  Claude Code it used to start the full orchestrator, about ten processes, before
+  reading the setting; it now reads it in the entry point and starts only `jq`
+  (plus `bash -c` when the value is an expression rather than empty or `false`).
+  On a sandboxed (gVisor) workspace that runs this hook on every turn, the
+  switched-off hook went from 0.23 s to 0.05 s median. Reading any setting also
+  no longer starts `tr` and `sed`.
+
 ## [0.6.1]
 
 - `include_all_agent_sessions` no longer scans the machine-wide `~/.claude/projects`
