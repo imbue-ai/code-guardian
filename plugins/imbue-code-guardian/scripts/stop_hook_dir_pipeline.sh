@@ -23,7 +23,7 @@
 # <result_file>:
 #   HEAD=<sha>            settled HEAD after any base-branch merge
 #   BRANCH=<name>         current branch
-#   HAS_CHANGES=true|false whether this dir has non-doc code changes vs base
+#   HAS_CHANGES=true|false whether this dir has reviewable changes vs base
 #   PR_NUMBER=<n>         PR number if one exists (empty otherwise)
 #   POLL_CI=true|false    whether the orchestrator should poll CI for this dir
 #
@@ -359,7 +359,16 @@ if [[ "$SKIP_INFORMATIONAL" == "true" ]]; then
         # A diff with no files, or only .md files, both leave NON_MD_FILES empty.
         CHANGED_FILES=$(_git diff --name-only "$REMOTE/$BASE_BRANCH"...HEAD 2>/dev/null || echo "")
         NON_MD_FILES=$(echo "$CHANGED_FILES" | grep -v '\.md$' || true)
-        if [[ -z "$NON_MD_FILES" ]]; then
+        REVIEWABLE_MD_PATHS=()
+        while IFS= read -r _p; do
+            [ -z "$_p" ] && continue
+            REVIEWABLE_MD_PATHS+=("$_p")
+        done < <(read_json_array "$REVIEWER_SETTINGS" "stop_hook.reviewable_markdown_paths")
+        REVIEWABLE_MD_FILES=""
+        if [[ -z "$NON_MD_FILES" && -n "${REVIEWABLE_MD_PATHS[0]:-}" ]]; then
+            REVIEWABLE_MD_FILES=$(_git diff --name-only "$REMOTE/$BASE_BRANCH"...HEAD -- "${REVIEWABLE_MD_PATHS[@]}" 2>/dev/null || echo "")
+        fi
+        if [[ -z "$NON_MD_FILES" && -z "$REVIEWABLE_MD_FILES" ]]; then
             _log_to_file "INFO" "$DIR diff vs $BASE_BRANCH is empty or docs-only -- skipping review/PR"
             HAS_CHANGES=false
         fi

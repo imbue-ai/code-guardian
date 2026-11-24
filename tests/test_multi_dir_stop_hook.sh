@@ -27,6 +27,7 @@
 #   17. Merge blocked by non-exempt dirt -> the generic conflict error
 #   18. Exempt-path dirt the merge does not touch -> merge proceeds untouched
 #   19. Exempt subtree too large for git's refusal message -> still classifies
+#   20. reviewable_markdown_paths: listed .md changes are reviewed, others skip
 
 set -uo pipefail
 
@@ -578,6 +579,36 @@ if [[ $(grep -c '^\[' "$E19") -lt 40 ]]; then
 else
     _bad "the blocked listing is capped, not one line per path ($(grep -c '^\[' "$E19") lines)"
 fi
+
+# ===========================================================================
+# Markdown an agent executes (a skill, a reference it loads) is reviewable even
+# though skip_informational treats every other .md change as docs-only.
+echo "Scenario 20: reviewable_markdown_paths -- listed .md changes are reviewed, others skip"
+md_only_branch() { # <root> <branch> <file> [reviewable_markdown_paths json]
+    make_repo "$1"
+    write_root_settings "$1" '[]'
+    if [[ -n "${4:-}" ]]; then
+        jq --argjson p "$4" '.stop_hook.reviewable_markdown_paths = $p' "$1/.reviewer/settings.json" \
+            > "$1/.reviewer/settings.json.tmp" && mv "$1/.reviewer/settings.json.tmp" "$1/.reviewer/settings.json"
+    fi
+    write_gitignore "$1"; commit_push "$1"
+    _gitq "$1" checkout -q -b "$2"
+    mkdir -p "$1/$(dirname "$3")"; echo "# changed" > "$1/$3"
+    _gitq "$1" add -A; _gitq "$1" commit -q -m "md change"
+}
+md_only_branch "$WORK/s20a/root" feature/skill .agents/skills/foo/SKILL.md '[".agents/skills"]'
+rc=$(run_hook "$WORK/s20a/root" "$WORK/s20a.err")
+assert_exit 2 "$rc" "a skill-only change under a listed path blocks"
+assert_has "$WORK/s20a.err" "autofix (/autofix)" "and asks for autofix"
+md_only_branch "$WORK/s20b/root" feature/docs docs/notes.md '[".agents/skills"]'
+rc=$(run_hook "$WORK/s20b/root" "$WORK/s20b.err")
+assert_exit 0 "$rc" "a .md change outside the listed paths still skips"
+md_only_branch "$WORK/s20c/root" feature/nested apps/x/skills/bar/SKILL.md '[":(glob)**/SKILL.md"]'
+rc=$(run_hook "$WORK/s20c/root" "$WORK/s20c.err")
+assert_exit 2 "$rc" "pathspec magic matches a SKILL.md anywhere"
+md_only_branch "$WORK/s20d/root" feature/unset .agents/skills/foo/SKILL.md
+rc=$(run_hook "$WORK/s20d/root" "$WORK/s20d.err")
+assert_exit 0 "$rc" "with the key unset, a skill-only change still skips"
 
 # ===========================================================================
 echo ""
