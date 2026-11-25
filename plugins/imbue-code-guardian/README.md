@@ -72,7 +72,7 @@ When enabled, the stop hook orchestrator runs every time the agent finishes a re
 2. **Per-dir non-review steps** (run concurrently, one set per reviewed dir, each scoped to that repo):
    - **Uncommitted changes check** -- all changes must be committed (or gitignored) before the hook passes.
    - **Fetch and merge base branch** -- fetches all remotes, merges the base branch, and pushes merge commits.
-   - **Docs-only / empty-diff detection** -- if only `.md` files changed (or nothing changed) vs base, that dir needs no review/PR.
+   - **Docs-only / empty-diff detection** -- if only `.md` files changed (or nothing changed) vs base, that dir needs no review/PR, unless one of them is under `stop_hook.reviewable_markdown_paths`.
    - **Push + PR check** -- pushes to the remote and verifies a PR exists (so CI starts early). If no PR exists and `ci.require_pr` is true, blocks to create one.
 3. **Unified review gates** (once per cycle, covering every reviewed dir): autofix (per-commit), architecture verification (per-branch), conversation review (per-commit, session-scoped/root-only). One `/autofix` and one `/verify-architecture` cover all dirs.
 4. **CI gate** -- once review gates pass, polls each dir's PR check status until complete.
@@ -120,6 +120,7 @@ Lookup precedence (first non-empty wins): env var → `settings.local.json` → 
 | `stop_hook.uncommitted_exempt_paths` | list | `[]` | Git pathspecs whose uncommitted changes the `require_committed` check ignores -- for expected machine-generated state, e.g. a vendored subtree a dev loop rsyncs into the working tree. The hook never discards this state: git still refuses to merge over it, and when that is the *only* thing blocking the base-branch merge the hook fails with a distinct message naming those paths (rather than reporting a merge conflict that isn't one), leaving it to the repo to drop and regenerate them. Committed changes under these paths are still diffed, reviewed, and pushed normally. |
 | `stop_hook.fetch_and_merge` | bool | `true` | Fetch/merge/push base branch on each stop. |
 | `stop_hook.skip_informational` | bool | `true` | Skip checks when only .md files changed (or nothing changed) vs base. |
+| `stop_hook.reviewable_markdown_paths` | list | `[]` | Git pathspecs for `.md` files that `skip_informational` does not skip: a change under one gets the full review. For markdown an agent executes, such as skills and the references they load, e.g. `[".agents/skills"]` or `[":(glob)**/SKILL.md"]`. |
 | `stop_hook.log_file` | string | `".reviewer/logs/stop_hook.jsonl"` | JSONL log file path (per reviewed dir; anchored inside each dir). |
 | `stop_hook.max_consecutive_blocks` | int | `3` | Safety hatch: let agent through after this many consecutive blocks at the same state. |
 | `stop_hook.additional_git_directories` | list | `[]` | Extra self-contained repos to review alongside the root (root config only). See [Reviewing multiple directories](#reviewing-multiple-directories). |

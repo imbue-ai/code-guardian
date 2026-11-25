@@ -7,6 +7,16 @@ is a version bump plus a merge to `main`; each harness installs the versioned pl
 
 This file starts at 0.5.0. For earlier releases, read the git history.
 
+## [0.7.0]
+
+- New `stop_hook.reviewable_markdown_paths`: git pathspecs naming `.md` files that
+  still need review when `skip_informational` is on. A branch that changed only
+  markdown used to skip autofix, architecture review and the PR/CI step entirely,
+  which let skill edits through unreviewed, since a skill is markdown an agent
+  runs. A repo can now list its skills (e.g. `[".agents/skills"]` or
+  `[":(glob)**/SKILL.md"]`), and a branch touching only those files gets the full
+  review. Unset, the behaviour is unchanged.
+
 ## [0.6.2]
 
 - The Stop hook exits sooner when `stop_hook.enabled_when` switches it off. In
